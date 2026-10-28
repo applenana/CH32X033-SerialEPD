@@ -9,6 +9,11 @@ workflow preference. Do not rewrite history or reset unrelated edits.
 GitHub upload requires a configured remote. Do not invent a repository URL;
 report when only a local commit is possible. Do not push unless requested.
 
+# Local build delivery
+
+By user request, compile in place and provide the Windows EXE and Android APK
+paths. Do not package ZIPs or run `tools/package_app.py` unless explicitly asked.
+
 # Verification
 
 The firmware and application share SEP/1 and `docs/protocol-vectors.json`.

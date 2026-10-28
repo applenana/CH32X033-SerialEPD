@@ -4,7 +4,7 @@
 
 已完成固件、通信规范、Python 上位机、图片转换、测试图和自动化测试。已用 WCH RISC-V 工具链构建出 BIN/HEX/ELF；**尚未连接实物进行 USB 枚举、刷屏和电气时序验收**。参考项目的实机验证结果不等于本项目已完成实机验证。
 
-另提供 **墨屿 · Ink Studio 0.3.1** Flutter 上位机：Windows / Android USB CDC 连接、自由裁切与旋转、6 种精选四色重建算法、预览、导出与可靠上传。详见 [软件使用与构建](app/README.md)、[算法对比](docs/image-reconstruction.md) 和 [软件验收](docs/app-validation.md)。本地发布包位于 `build/releases/`，不纳入源码提交。
+另提供 **墨屿 · Ink Studio 0.3.2** Flutter 上位机：Windows / Android USB CDC 连接、自由裁切与旋转、6 种精选四色重建算法、预览、导出与可靠上传。详见 [软件使用与构建](app/README.md)、[算法对比](docs/image-reconstruction.md) 和 [软件验收](docs/app-validation.md)。本机直接运行 `app/build/windows/x64/runner/Release/ink_studio.exe`；Android 编译输出为 `app/build/app/outputs/apk/release/app-release.apk`。默认只编译，不打包。
 
 ## 能力与约束
 

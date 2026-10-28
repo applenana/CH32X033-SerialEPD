@@ -43,3 +43,11 @@ https://cv.ulichney.com/papers/1993-void-cluster.pdf
 Coverage-based decomposition was researched in epdoptimize (Apache-2.0)
 and epd-dither (AGPL-3.0-only). No code or assets from those two repositories
 are incorporated. Ink Studio uses a BWYR-specific weighted isotonic formula.
+
+Natural color mapping (Ink Studio 0.3.2): original implementation inspired by
+the smooth neutral/cool protection and color-candidate penalty ideas in
+wiwiwei/ink-nfc-lab, src/dev/inknfclab/ResearchQuantizer.java.
+https://github.com/wiwiwei/ink-nfc-lab
+No Java source is incorporated. Ink Studio uses different thresholds,
+linear-light luminance-preserving blending, and source-guided chromatic
+error attenuation. These are heuristic settings, not panel calibration.

@@ -267,7 +267,7 @@ class _StudioPageState extends State<StudioPage> {
           onPressed: () => showAboutDialog(
             context: context,
             applicationName: '墨屿 · Ink Studio',
-            applicationVersion: '0.3.1',
+            applicationVersion: '0.3.2',
             children: const [
               Text(
                 '面向黑 / 白 / 黄 / 红电子纸的离线图像工作台。\nSEP/1 · Windows 串口与 Android USB OTG。',
@@ -670,6 +670,20 @@ class _StudioPageState extends State<StudioPage> {
             1,
             (v) => c.settings.copyWith(softness: v),
           ),
+        _slider(
+          '自然映射',
+          c.settings.naturalMapping,
+          0,
+          1,
+          (v) => c.settings.copyWith(naturalMapping: v),
+        ),
+        const Padding(
+          padding: EdgeInsets.only(bottom: 14),
+          child: Text(
+            '减少灰色与冷色区域的红黄杂点。调高更柔和，调低保留更多色彩；0 为旧版映射。',
+            style: TextStyle(fontSize: 10, color: muted, height: 1.6),
+          ),
+        ),
         if (c.settings.mode == DitherMode.perceptual ||
             c.settings.mode == DitherMode.blueNoise)
           _slider(
@@ -815,6 +829,11 @@ class _StudioPageState extends State<StudioPage> {
     onPressed: () => c.updateSettings(
       ImageSettings(
         mode: mode,
+        naturalMapping: mode == DitherMode.none
+            ? 0
+            : mode == DitherMode.perceptual
+            ? .65
+            : .35,
         rotation: c.settings.rotation,
         cover: c.settings.cover,
       ),

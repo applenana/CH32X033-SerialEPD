@@ -4,6 +4,7 @@ import 'package:image/image.dart' as img;
 import '../protocol/codec.dart';
 import 'geometry.dart';
 import 'reconstruction.dart';
+import 'color_mapping.dart';
 
 enum DitherMode {
   perceptual('感知重建 · DBS', '优化观看尺度下的颜色与网点，计算较慢'),
@@ -25,6 +26,7 @@ class ImageSettings {
       gamma,
       strength,
       softness,
+      naturalMapping,
       paperWhite;
   final int rotation;
   final bool cover, perceptual, serpentine;
@@ -40,6 +42,7 @@ class ImageSettings {
     this.perceptual = true,
     this.serpentine = true,
     this.softness = .5,
+    this.naturalMapping = .65,
     this.paperWhite = .07,
   });
   ImageSettings copyWith({
@@ -54,6 +57,7 @@ class ImageSettings {
     bool? perceptual,
     bool? serpentine,
     double? softness,
+    double? naturalMapping,
     double? paperWhite,
   }) => ImageSettings(
     mode: mode ?? this.mode,
@@ -67,6 +71,7 @@ class ImageSettings {
     perceptual: perceptual ?? this.perceptual,
     serpentine: serpentine ?? this.serpentine,
     softness: softness ?? this.softness,
+    naturalMapping: naturalMapping ?? this.naturalMapping,
     paperWhite: paperWhite ?? this.paperWhite,
   );
   Map<String, dynamic> toJson() => {
@@ -81,6 +86,7 @@ class ImageSettings {
     'perceptual': perceptual,
     'serpentine': serpentine,
     'softness': softness,
+    'naturalMapping': naturalMapping,
     'paperWhite': paperWhite,
   };
   factory ImageSettings.fromJson(Map<String, dynamic> json) {
@@ -111,6 +117,7 @@ class ImageSettings {
       perceptual: json['perceptual'] != false,
       serpentine: json['serpentine'] != false,
       softness: value('softness', .5, 0, 1),
+      naturalMapping: value('naturalMapping', .65, 0, 1),
       paperWhite: value('paperWhite', .07, 0, .15),
     );
   }
@@ -215,17 +222,26 @@ List<double> _oklab(double r, double g, double b) {
 
 final _labPalette = palette.map((c) => _oklab(c[0], c[1], c[2])).toList();
 
-int nearestColor(double r, double g, double b, bool perceptual) {
+int nearestColor(
+  double r,
+  double g,
+  double b,
+  bool perceptual, {
+  double chromaPenalty = 0,
+  bool monochrome = false,
+}) {
   final p = perceptual ? _oklab(r, g, b) : [r, g, b];
   final colors = perceptual ? _labPalette : palette;
   var best = double.infinity, index = 0;
   for (var i = 0; i < 4; i++) {
+    if (monochrome && i >= 2) continue;
     final c = colors[i];
     final a = p[0] - c[0], d = p[1] - c[1], e = p[2] - c[2];
     // Penalize chroma twice per axis so neutral gray does not become red merely
     // because the four-entry palette has a large luminance gap.
     final chromaWeight = perceptual ? 4.0 : 1.0;
-    final distance = a * a + chromaWeight * (d * d + e * e);
+    final distance =
+        a * a + chromaWeight * (d * d + e * e) + (i >= 2 ? chromaPenalty : 0);
     if (distance < best) {
       best = distance;
       index = i;
@@ -324,6 +340,10 @@ ProcessedImage processImage(ProcessRequest request) {
       }
     }
   }
+  // A zero setting takes the original path without round-trip color changes.
+  final natural = s.naturalMapping > 0
+      ? applyNaturalMapping(rgb, s.naturalMapping)
+      : null;
   final indices = Uint8List(w * h), counts = List.filled(4, 0);
   final output = img.Image(width: w, height: h, numChannels: 3);
   if (s.mode == DitherMode.perceptual || s.mode == DitherMode.blueNoise) {
@@ -365,7 +385,14 @@ ProcessedImage processImage(ProcessRequest request) {
       final r = rgb[at].clamp(0.0, 1.0),
           g = rgb[at + 1].clamp(0.0, 1.0),
           b = rgb[at + 2].clamp(0.0, 1.0);
-      final index = nearestColor(r, g, b, s.perceptual);
+      final index = nearestColor(
+        r,
+        g,
+        b,
+        s.perceptual,
+        chromaPenalty: .25 * (natural?.protection[y * w + x] ?? 0),
+        monochrome: natural?.neutral[y * w + x] == 1,
+      );
       final color = palette[index];
       indices[y * w + x] = index;
       counts[index]++;
@@ -378,13 +405,21 @@ ProcessedImage processImage(ProcessRequest request) {
       );
       if (kernel != null && s.strength > 0) {
         final error = [r - color[0], g - color[1], b - color[2]];
+        final luminanceError =
+            .2126 * error[0] + .7152 * error[1] + .0722 * error[2];
         for (final weight in kernel) {
           final nx = x + (reverse ? -weight[0] : weight[0]), ny = y + weight[1];
           if (nx < 0 || nx >= w || ny >= h) continue;
           final target = (ny * w + nx) * 3,
               amount = weight[2] / divisor * s.strength;
+          // Preserve encoded-RGB error luminance while reducing color leakage
+          // into neutral/cool neighbors. The original kernels are unchanged.
+          final retain = 1 - (natural?.protection[ny * w + nx] ?? 0);
           for (var c = 0; c < 3; c++) {
-            rgb[target + c] += error[c] * amount;
+            final transferred = natural == null
+                ? error[c]
+                : luminanceError + (error[c] - luminanceError) * retain;
+            rgb[target + c] += transferred * amount;
           }
         }
       }

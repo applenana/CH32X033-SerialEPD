@@ -2,7 +2,7 @@
 
 面向 CH32X033 SerialEPD 的 Flutter 四色图像工作台。支持 Windows x64 串口和 Android USB OTG；图像完全在本地处理，不上传云端。
 
-当前版本 **0.3.1**：修正串口无限阻塞、桌面串口后台隔离、连接限时与取消。本轮仅编译，测试由用户执行，见 [本版说明](../docs/release-0.3.1.md)。另见 [两个 NFC 项目的混色实现研究](../docs/nfc-image-research.md)。
+当前版本 **0.3.2**：增加可调的自然色彩映射，平滑保护灰色和冷色，减少扩散串色；保留 0.3.1 串口修复。仅编译，不运行回归或实屏验证，见 [本版说明](../docs/release-0.3.2.md)。另见 [两个 NFC 项目的混色实现研究](../docs/nfc-image-research.md)。
 
 ![Windows 布局](../docs/images/ink-studio-desktop.png)
 
@@ -15,21 +15,23 @@
 - PNG / JPEG / WebP / BMP 导入，EXIF 方向、透明度合成白底。最大 25 MB、2400 万像素；超限请先缩小。动画只取第一帧，不提供动图播放。
 - 自由裁切、四角缩放裁切框、框内移动、屏幕 / 方形 / 4:3 比例、任意角度旋转（0.5° 步进）、90° 快捷旋转和水平镜像。编辑基于原图，重复编辑不会累积缩放损失；原始文件不变。
 - 6 种重建方式：**感知重建 · DBS**、**蓝噪声 · 色彩覆盖**、直接量化，以及筛选保留的三种传统抖动 Floyd–Steinberg、Burkes、Stucki。
-- 亮度、对比度、饱和度、Gamma、抖动强度、蛇形扫描、RGB / 加权 OKLab 色彩匹配。照片、插画、文字三个快捷预设。
+- 自然映射强度、亮度、对比度、饱和度、Gamma、抖动强度、蛇形扫描、RGB / 加权 OKLab 色彩匹配。照片、插画、文字三个快捷预设。
 - 后台 isolate 处理，连续调参合并为最新任务，旧结果不会覆盖新预览。处理未完成时禁用发送。
 - 原图 / 四色预览切换、缩放查看、四种颜色占比、PNG 和 `.epd` 原始帧导出、参数本地保存。
 - 整帧 CRC32、逐块应答、同序号幂等重试、上传阶段取消、设备状态查询。发送进度 100% 只表示收图完成，设备报告 DONE 后才显示“画面已更新”。
 - Android 传输和等待刷新期间保持当前窗口常亮；请让应用保持前台。此版不提供后台服务或跨进程恢复传输。
 
-默认和“照片”预设采用保色 DBS：先在线性光空间分配四色覆盖率，再以蓝噪声采样，最后交换网点位置，降低观看尺度下的误差。全局四色占比保持不变，灰阶区域不会引入红黄网点。旧配置中的已移除算法会迁移到保留项；升级后点击“照片”即可体验新算法。观看柔和度控制优化尺度；纸白保护减少近白背景散点，但会舍弃极浅层次，需要时调到 0。
+默认和“照片”预设采用自然映射（0.65）与保色 DBS：先平滑压低低彩度、蓝青区域中的色度并保持线性亮度，再在线性光空间分配四色覆盖率，再以蓝噪声采样，最后交换网点位置，降低观看尺度下的误差。全局四色占比保持不变，灰阶区域不会引入红黄网点。旧配置中的已移除算法会迁移到保留项；升级后点击“照片”即可体验新算法。观看柔和度控制优化尺度；纸白保护减少近白背景散点，但会舍弃极浅层次，需要时调到 0。
 
-保留的三种扩散方式继续扩散 RGB 误差，OKLab 匹配使用 `ΔL² + 4(Δa² + Δb²)`。所有预览均基于理想 sRGB 四色，尚未测量实体面板色度。原理、开源差异、对比图和实测耗时见 [图像重建研究与验证](../docs/image-reconstruction.md)。
+自然映射可调到 0 恢复旧处理路径；插画预设为 0.35，文字预设为 0。强度越高越可能损失浅色与冷色差异。此功能借鉴 ink-nfc-lab 的平滑保护思路，但采用自行实现的线性光预处理；没有更换为未经本屏测量的红黄调色板。
+
+保留的三种扩散方式继续扩散 RGB 误差；开启自然映射时按源图区域减少色度误差串入，并对红黄候选加惩罚，严格中性灰只选黑白。OKLab 匹配的基础距离使用 `ΔL² + 4(Δa² + Δb²)`。所有预览均基于理想 sRGB 四色，尚未测量实体面板色度。原理、开源差异、对比图和实测耗时见 [图像重建研究与验证](../docs/image-reconstruction.md)。
 
 当前面板的原生输出只有黑白黄红，视觉灰阶通过网点混色产生；未找到可验证的每色多级灰度驱动，详见 [灰度能力核查](../docs/panel-grayscale.md)。
 
 ## 使用
 
-1. Windows：完整解压发布 ZIP，运行 `ink_studio.exe`，保留同目录 DLL 和 `data/`。需要 Windows 10/11 x64；若提示缺少 VC 运行库，安装微软 Visual C++ 2015–2022 x64 Redistributable。
+1. Windows：直接运行 `app/build/windows/x64/runner/Release/ink_studio.exe`，保留同目录 DLL 和 `data/`，无需打包或解压。需要 Windows 10/11 x64；若提示缺少 VC 运行库，安装微软 Visual C++ 2015–2022 x64 Redistributable。
 2. Android：安装 APK，通过支持数据传输的 OTG 线连接设备；展开“我的设备”，搜索并连接，允许系统 USB 授权。需要 Android 7.0 / API 24 或以上及 USB Host 支持。
 3. 根据屏幕实际批次选择 A0 或 A1，软件不猜测批次。连接时不重置屏幕事务；点击发送才建立写入会话。
 4. 导入图片，点击画布右上角“裁切”。拖动四角选区域，框内拖动调整位置，可自由旋转、镜像；点“应用裁切”才保存，返回则放弃。自由比例裁切后默认完整放入屏幕并留白；选择“屏幕比例”可直接铺满。重新打开编辑器可以修改选择，点“还原全图”恢复原始范围。
@@ -46,8 +48,6 @@
 ```powershell
 cd app
 flutter pub get
-flutter analyze
-flutter test
 flutter build windows --release
 flutter build apk --release
 ```
@@ -63,7 +63,7 @@ cd app/android
 
 需先执行一次 `flutter pub get` 并由 Flutter 生成 Android 本机配置。APK 输出在 `app/build/app/outputs/apk/release/app-release.apk`，Flutter 常规构建还会复制到 `app/build/app/outputs/flutter-apk/`。跨盘符 Pub 缓存的 Kotlin 增量编译已在项目中关闭，避免相对路径错误。
 
-Windows 输出在 `app/build/windows/x64/runner/Release/`，必须打包整个目录。`python tools/package_app.py` 从仓库根目录收集 Windows 目录和 Android APK，生成 `build/releases/` 包与 SHA256 校验。
+Windows 输出在 `app/build/windows/x64/runner/Release/`，本机直接运行其中的 EXE。用户要求默认只编译，不自动运行 `tools/package_app.py`，不生成 ZIP、不复制 APK 到发布目录。需要迁移到别的电脑时才手动复制整个 Release 目录。
 
 ## 验证与目录
 
