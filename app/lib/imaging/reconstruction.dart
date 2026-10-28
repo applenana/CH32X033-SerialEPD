@@ -122,8 +122,8 @@ Reconstruction reconstruct(
   int w,
   int h, {
   bool optimize = false,
-  double softness = .5,
-  double paperWhite = .07,
+  double softness = 1,
+  double paperWhite = 0,
   int maxPasses = 3,
 }) {
   final n = w * h,
