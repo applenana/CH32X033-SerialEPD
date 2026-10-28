@@ -200,6 +200,14 @@ class AutoReference {
     return ImageSettings(
       cover: current.cover,
       rotation: current.rotation,
+      calibration: current.calibration,
+      dynamicRange: current.dynamicRange,
+      gamutCompression: current.gamutCompression,
+      softness: current.softness,
+      naturalMapping: current.naturalMapping,
+      paperWhite: current.paperWhite,
+      serpentine: current.serpentine,
+      perceptual: current.perceptual,
       mode: photo ? DitherMode.perceptual : DitherMode.none,
       brightness: photo && median < .24 ? .025 : 0,
       contrast: photo && span > .18 && span < .70 ? 1.06 : 1,
@@ -325,7 +333,13 @@ AutoResult _search(
   final seed = reference.seed(original);
   candidate(seed, '第一轮：按原图生成初调方案…', .20);
   candidate(
-    ImageSettings(cover: original.cover, rotation: original.rotation),
+    original.copyWith(
+      mode: DitherMode.perceptual,
+      brightness: 0,
+      contrast: 1,
+      saturation: 1,
+      gamma: 1,
+    ),
     '第一轮：比较默认保细节方案…',
     .30,
   );

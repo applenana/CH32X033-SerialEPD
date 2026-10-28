@@ -19,6 +19,15 @@ void main() {
       [0, 0, 0], [0.01, 0.01, 0.01], [1, 1, 0], [1, 0, 0],
     ]).valid, isFalse);
   });
+  test('Dynamic and gamut compression are active without calibration', () {
+    final plain = projectToPalette(.05, .25, .85, const [
+      [0, 0, 0], [1, 1, 1], [1, 1, 0], [1, 0, 0],
+    ], 0);
+    final compressed = projectToPalette(.05, .25, .85, const [
+      [0, 0, 0], [1, 1, 1], [1, 1, 0], [1, 0, 0],
+    ], 1);
+    expect(compressed, isNot(plain));
+  });
   test('Compact algorithm list and legacy preference migration', () {
     expect(DitherMode.values.map((m) => m.name).toSet(), {
       'none',

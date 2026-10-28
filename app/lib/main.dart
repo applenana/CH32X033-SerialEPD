@@ -925,7 +925,6 @@ class _StudioPageState extends State<StudioPage> {
           0,
           1,
           (v) => c.settings.copyWith(gamutCompression: v),
-          enabled: c.settings.calibration.enabled,
         ),
         OutlinedButton.icon(
           onPressed: _editPalette,
@@ -938,7 +937,7 @@ class _StudioPageState extends State<StudioPage> {
             child: const Text('恢复理想色板'),
           ),
         const Text(
-          '实测色板只改变软件映射，不改变 2bpp 协议色号。动态范围压缩用于降低超色域颜色的突兀暖色偏移；默认参数为 0.7。',
+          '动态范围和色域压缩对理想色板也生效；输入实测色板后会替换四个颜色点，但不会改变 2bpp 协议色号。默认值为 0，便于先观察原始效果。',
           style: TextStyle(fontSize: 10, color: muted, height: 1.6),
         ),
       ],

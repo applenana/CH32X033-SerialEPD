@@ -49,8 +49,8 @@ class ImageSettings {
     this.naturalMapping = 1,
     this.paperWhite = 0,
     this.calibration = PaletteCalibration.ideal,
-    this.dynamicRange = .7,
-    this.gamutCompression = .7,
+    this.dynamicRange = 0,
+    this.gamutCompression = 0,
   });
   ImageSettings copyWith({
     DitherMode? mode,
@@ -138,8 +138,8 @@ class ImageSettings {
       naturalMapping: currentDefaults ? value('naturalMapping', 1, 0, 1) : 1,
       paperWhite: currentDefaults ? value('paperWhite', 0, 0, .15) : 0,
       calibration: PaletteCalibration.fromJson(json['calibration']),
-      dynamicRange: value('dynamicRange', .7, 0, 1),
-      gamutCompression: value('gamutCompression', .7, 0, 1),
+      dynamicRange: value('dynamicRange', 0, 0, 1),
+      gamutCompression: value('gamutCompression', 0, 0, 1),
     );
   }
 }
@@ -225,6 +225,8 @@ const _divisors = <DitherMode, int>{
 
 double _linear(double c) =>
     c <= .04045 ? c / 12.92 : math.pow((c + .055) / 1.055, 2.4).toDouble();
+double _encodeLinear(double c) =>
+    c <= .0031308 ? 12.92 * c : 1.055 * math.pow(c, 1 / 2.4).toDouble() - .055;
 List<double> _oklab(double r, double g, double b) {
   r = _linear(r);
   g = _linear(g);
@@ -404,11 +406,15 @@ ProcessedImage processPrepared(
     for (var c = 0; c < 3; c++) {
       var v = l + (prepared.rgb[at + c] - l) * s.saturation;
       v = ((v - .5) * s.contrast + .5 + s.brightness).clamp(0, 1);
-      if (s.calibration.enabled && s.dynamicRange > 0) {
-        final factor = 1 - .38 * s.dynamicRange.clamp(0.0, 1.0);
-        v = .5 + (v - .5) * factor;
+      v = math.pow(v, 1 / s.gamma).toDouble();
+      if (s.dynamicRange > 0) {
+        // Compress in linear light, then encode again for the reconstruction
+        // boundary. This makes the control affect actual coverage ratios.
+        final factor = 1 - .62 * s.dynamicRange.clamp(0.0, 1.0);
+        final linear = .5 + (linearLight(v) - .5) * factor;
+        v = _encodeLinear(linear.clamp(0.0, 1.0));
       }
-      rgb[at + c] = math.pow(v, 1 / s.gamma).toDouble();
+      rgb[at + c] = v.clamp(0.0, 1.0);
     }
   }
   // A zero setting takes the original path without round-trip color changes.
@@ -428,7 +434,7 @@ ProcessedImage processPrepared(
       inks: inks
           .map((c) => [linearLight(c[0]), linearLight(c[1]), linearLight(c[2])])
           .toList(),
-      gamutCompression: s.calibration.enabled ? s.gamutCompression : 0,
+      gamutCompression: s.gamutCompression,
     );
     for (var i = 0; i < w * h; i++) {
       final index = result.indices[i], color = inks[index];
