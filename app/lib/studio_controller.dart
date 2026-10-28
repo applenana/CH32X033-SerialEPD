@@ -87,6 +87,13 @@ class StudioController extends ChangeNotifier {
     scheduleProcess();
   }
 
+  void resetSettings() {
+    settings = const ImageSettings();
+    notice = '全部图像参数已重置，已保留图片和裁切结果';
+    unawaited(_saveSettings());
+    scheduleProcess(immediate: true);
+  }
+
   Future<void> _saveSettings() async {
     try {
       await _prefs?.setString('imageSettings', jsonEncode(settings.toJson()));

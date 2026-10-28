@@ -267,7 +267,7 @@ class _StudioPageState extends State<StudioPage> {
           onPressed: () => showAboutDialog(
             context: context,
             applicationName: '墨屿 · Ink Studio',
-            applicationVersion: '0.3.2',
+            applicationVersion: '0.3.3',
             children: const [
               Text(
                 '面向黑 / 白 / 黄 / 红电子纸的离线图像工作台。\nSEP/1 · Windows 串口与 Android USB OTG。',
@@ -628,7 +628,19 @@ class _StudioPageState extends State<StudioPage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _title('四色调色室', '为电子纸，找到恰好的层次。', icon: Icons.tune_rounded),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: c.resetSettings,
+          icon: const Icon(Icons.restart_alt_rounded, size: 18),
+          label: const Text('重置所有参数'),
+        ),
+        const Padding(
+          padding: EdgeInsets.only(top: 4, bottom: 16),
+          child: Text(
+            '一键恢复算法、调色和适配默认值，保留图片与裁切。',
+            style: TextStyle(fontSize: 10, color: muted, height: 1.6),
+          ),
+        ),
         Row(
           children: [
             Expanded(child: _preset('照片', DitherMode.perceptual)),
@@ -813,10 +825,6 @@ class _StudioPageState extends State<StudioPage> {
         const Text(
           '原生黑白黄红四色；灰阶由网点混色呈现。实体颜色受光线与面板批次影响。',
           style: TextStyle(fontSize: 10, color: muted, height: 1.6),
-        ),
-        TextButton(
-          onPressed: () => c.updateSettings(const ImageSettings()),
-          child: const Text('恢复默认', style: TextStyle(fontSize: 12)),
         ),
       ],
     ),
