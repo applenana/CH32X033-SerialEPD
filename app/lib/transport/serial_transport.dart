@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'desktop_config.dart';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
@@ -269,17 +270,7 @@ class _NativeDesktopTransport implements SerialTransport {
       if (!_port.openReadWrite()) {
         throw StateError('端口打开失败：${SerialPort.lastError}');
       }
-      final config = SerialPortConfig();
-      try {
-        config.baudRate = 115200;
-        config.bits = 8;
-        config.stopBits = 1;
-        config.parity = SerialPortParity.none;
-        config.setFlowControl(SerialPortFlowControl.none);
-        _port.config = config;
-      } finally {
-        config.dispose();
-      }
+      configureDesktopPort(_port);
       // Nonblocking reads avoid waiting on the UI isolate and make disconnect immediate.
       _timer = Timer.periodic(const Duration(milliseconds: 5), (_) {
         try {
@@ -294,8 +285,11 @@ class _NativeDesktopTransport implements SerialTransport {
         }
       });
     } catch (_) {
-      _port.close();
-      _port.dispose();
+      try {
+        _port.close();
+      } finally {
+        _port.dispose();
+      }
       rethrow;
     }
   }
