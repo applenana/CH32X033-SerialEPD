@@ -8,24 +8,28 @@
 
 - 枚举串口 / USB，优先显示 `1A86:FE0C`，连接后用 SEP/1 INFO 核验分辨率、格式、帧长与块大小。
 - Android 显式选择 CDC ACM 驱动，避免按 WCH VID 误选 CH34x；系统负责请求 USB 权限。
-- PNG / JPEG / WebP / BMP 导入，EXIF 方向、90° 旋转、完整留白 / 居中铺满、透明度合成白底。最大 25 MB、2400 万像素；超限请先缩小。动画只取第一帧，不提供动图播放。
-- 10 种量化方式：直接量化、Floyd–Steinberg、Atkinson、Jarvis–Judice–Ninke、Stucki、Burkes、Sierra、Sierra Lite、Bayer 4×4、Bayer 8×8。
+- PNG / JPEG / WebP / BMP 导入，EXIF 方向、透明度合成白底。最大 25 MB、2400 万像素；超限请先缩小。动画只取第一帧，不提供动图播放。
+- 自由裁切、四角缩放裁切框、框内移动、屏幕 / 方形 / 4:3 比例、任意角度旋转（0.5° 步进）、90° 快捷旋转和水平镜像。编辑基于原图，重复编辑不会累积缩放损失；原始文件不变。
+- 12 种重建方式：新增 **感知重建 · DBS**、**蓝噪声 · 色彩覆盖**；保留直接量化、Floyd–Steinberg、Atkinson、Jarvis–Judice–Ninke、Stucki、Burkes、Sierra、Sierra Lite、Bayer 4×4、Bayer 8×8。
 - 亮度、对比度、饱和度、Gamma、抖动强度、蛇形扫描、RGB / 加权 OKLab 色彩匹配。照片、插画、文字三个快捷预设。
 - 后台 isolate 处理，连续调参合并为最新任务，旧结果不会覆盖新预览。处理未完成时禁用发送。
 - 原图 / 四色预览切换、缩放查看、四种颜色占比、PNG 和 `.epd` 原始帧导出、参数本地保存。
 - 整帧 CRC32、逐块应答、同序号幂等重试、上传阶段取消、设备状态查询。发送进度 100% 只表示收图完成，设备报告 DONE 后才显示“画面已更新”。
 - Android 传输和等待刷新期间保持当前窗口常亮；请让应用保持前台。此版不提供后台服务或跨进程恢复传输。
 
-算法名称指经典扩散核；这里扩散 RGB 误差，使用四色目标调色板重新量化。OKLab 模式使用 `ΔL² + 4(Δa² + Δb²)`，减少中性灰被误配成红色；Bayer 噪声在色域端点衰减，保护纯黑白黄红。预览为标准 sRGB 四色，不代表实体面板的色度测量结果，也未针对特定批次做 ICC 标定。
+默认和“照片”预设采用保色 DBS：先在线性光空间分配四色覆盖率，再以蓝噪声采样，最后交换网点位置，降低观看尺度下的误差。全局四色占比保持不变，灰阶区域不会引入红黄网点。旧配置保留原算法；升级后点击“照片”即可体验新算法。观看柔和度控制优化尺度；纸白保护减少近白背景散点，但会舍弃极浅层次，需要时调到 0。
+
+原有扩散方式继续扩散 RGB 误差，OKLab 匹配使用 `ΔL² + 4(Δa² + Δb²)`；Bayer 在色域端点衰减。所有预览均基于理想 sRGB 四色，尚未测量实体面板色度。原理、开源差异、对比图和实测耗时见 [图像重建研究与验证](../docs/image-reconstruction.md)。
 
 ## 使用
 
 1. Windows：完整解压发布 ZIP，运行 `ink_studio.exe`，保留同目录 DLL 和 `data/`。需要 Windows 10/11 x64；若提示缺少 VC 运行库，安装微软 Visual C++ 2015–2022 x64 Redistributable。
 2. Android：安装 APK，通过支持数据传输的 OTG 线连接设备；展开“我的设备”，搜索并连接，允许系统 USB 授权。需要 Android 7.0 / API 24 或以上及 USB Host 支持。
 3. 根据屏幕实际批次选择 A0 或 A1，软件不猜测批次。连接时不重置屏幕事务；点击发送才建立写入会话。
-4. 导入图片，选算法并调整效果；“完整”保留整张图片并留白，“铺满”居中裁剪。PNG 与发送帧来自同一次处理结果。
-5. 点击发送，依次等待准备、传输、刷新和完成。初始化最长可等待约 7 分钟，刷新最长约 4 分钟；这些是故障上限，不是典型耗时。
-6. 上传可取消；刷新启动后不能取消。连接中断或应答超时先查询状态，软件不会自动重新发起一次刷新。跨断电/复位不续传。
+4. 导入图片，点击画布右上角“裁切”。拖动四角选区域，框内拖动调整位置，可自由旋转、镜像；点“应用裁切”才保存，返回则放弃。自由比例裁切后默认完整放入屏幕并留白；选择“屏幕比例”可直接铺满。重新打开编辑器可以修改选择，点“还原全图”恢复原始范围。
+5. 选算法并调整效果；“完整”保留所选范围，“铺满”会再次居中裁剪至屏幕比例。PNG 与发送帧来自同一次处理结果。裁切范围仅属于当前图片，不会套用到下次导入；退出应用不保存图片工程。
+6. 点击发送，依次等待准备、传输、刷新和完成。初始化最长可等待约 7 分钟，刷新最长约 4 分钟；这些是故障上限，不是典型耗时。
+7. 上传可取消；刷新启动后不能取消。连接中断或应答超时先查询状态，软件不会自动重新发起一次刷新。跨断电/复位不续传。
 
 当前 APK 使用开发调试证书签名的 **Release 优化构建**，供本地验证，不是商店正式发行签名。正式发布前请配置自有密钥；不要提交密钥文件。Windows 包未做代码签名。
 
@@ -73,6 +77,7 @@ Windows 输出在 `app/build/windows/x64/runner/Release/`，必须打包整个�
 - [USB Serial 插件](https://pub.dev/packages/usb_serial)、[Flutter libserialport](https://pub.dev/packages/flutter_libserialport)：原生串口 API。
 - [image](https://pub.dev/packages/image) 与其[滤镜文档](https://github.com/brendan-duncan/image/blob/main/doc/filters.md)：图像编解码及扩散算法参考。
 - [Björn Ottosson 的 OKLab 原文](https://bottosson.github.io/posts/oklab/)：sRGB 到 OKLab 矩阵；本项目另外加入色度权重。
+- DBS 数学实现改编自 [OpenDisplay epaper-dithering](https://github.com/OpenDisplay/epaper-dithering) 和 [OpenDithering](https://github.com/guysie/opendithering)，MIT 许可已随应用收录。覆盖率路径参考公开思路，自行实现，详见研究文档。
 - 关于按钮可查看 Flutter 收集的第三方开源许可。Windows 动态链接的 libserialport 采用 LGPL；[源代码和许可](https://github.com/sigrokproject/libserialport)及 [Flutter 构建包装](https://github.com/jpnurmi/flutter_libserialport)。请保留发布包中的许可与可替换 DLL。
 
 当前仅生成 Windows、Android 原生工程；macOS、Linux、iOS、Web 未验证，不应视为已支持。

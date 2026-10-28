@@ -4,6 +4,8 @@
 
 已完成固件、通信规范、Python 上位机、图片转换、测试图和自动化测试。已用 WCH RISC-V 工具链构建出 BIN/HEX/ELF；**尚未连接实物进行 USB 枚举、刷屏和电气时序验收**。参考项目的实机验证结果不等于本项目已完成实机验证。
 
+另提供 **墨屿 · Ink Studio 0.2.0** Flutter 上位机：Windows / Android USB CDC 连接、自由裁切与旋转、12 种四色重建算法、预览、导出与可靠上传。详见 [软件使用与构建](app/README.md)、[算法对比](docs/image-reconstruction.md) 和 [软件验收](docs/app-validation.md)。本地发布包位于 `build/releases/`，不纳入源码提交。
+
 ## 能力与约束
 
 - 标准 USB CDC ACM，USB FS 12 Mbps，Windows/Linux/macOS 上位机可通过串口 API 通信。115200 等 line coding 仅为兼容参数，不限制 USB 吞吐；不依赖 DTR 才能收图。
@@ -82,6 +84,7 @@ CLI 传图会等待初始化就绪，再逐块上传，最后发送 COMMIT，并
 - [硬件与驱动](docs/hardware.md)：接线、复位、A0/A1 写入差异、按钮行为。
 - [验证记录与实机验收](docs/validation.md)：已验证与待验证边界、故障定位。
 - [参考来源](docs/references.md)：MoInk、WCH SDK 和许可说明。
+- [Ink Studio](app/README.md)：Windows / Android 应用、自由裁切、照片重建与构建。
 
 核心文件：`User/protocol.c` 为不依赖 MCU 寄存器的协议/事务层；`User/epd.c` 为屏幕状态机；`User/board.c` 为 SPI/GPIO/毫秒时钟；`User/cdc.c` 为 USB 控制和收发；`tools/serialepd.py` 同时提供可导入的 Python 客户端和 CLI。
 

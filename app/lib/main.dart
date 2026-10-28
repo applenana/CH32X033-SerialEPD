@@ -1,10 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'imaging/processor.dart';
 import 'studio_controller.dart';
+import 'imaging/geometry.dart';
+import 'widgets/crop_editor.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  LicenseRegistry.addLicense(() async* {
+    yield LicenseEntryWithLineBreaks([
+      'OpenDisplay / OpenDithering DBS',
+    ], await rootBundle.loadString('assets/licenses/reconstruction.txt'));
+  });
   runApp(const InkStudio());
 }
 
@@ -74,6 +83,36 @@ class StudioPage extends StatefulWidget {
 
 class _StudioPageState extends State<StudioPage> {
   late final StudioController c;
+  bool _openingEditor = false;
+  Future<void> _editCrop() async {
+    if (_openingEditor) return;
+    setState(() => _openingEditor = true);
+    final originalSource = c.source;
+    try {
+      final bytes = await c.editingSource();
+      if (!mounted || !identical(originalSource, c.source)) return;
+      final result = await Navigator.of(context).push<CropSpec>(
+        MaterialPageRoute(
+          builder: (_) => CropEditor(
+            source: bytes,
+            initial:
+                c.crop ??
+                (c.settings.rotation == 0
+                    ? null
+                    : CropSpec(angle: c.settings.rotation * 90)),
+          ),
+        ),
+      );
+      if (result != null && identical(originalSource, c.source)) {
+        c.applyCrop(result);
+      }
+    } catch (e) {
+      c.report(e);
+    } finally {
+      if (mounted) setState(() => _openingEditor = false);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -228,7 +267,7 @@ class _StudioPageState extends State<StudioPage> {
           onPressed: () => showAboutDialog(
             context: context,
             applicationName: '墨屿 · Ink Studio',
-            applicationVersion: '0.1.0',
+            applicationVersion: '0.2.0',
             children: const [
               Text(
                 '面向黑 / 白 / 黄 / 红电子纸的离线图像工作台。\nSEP/1 · Windows 串口与 Android USB OTG。',
@@ -439,12 +478,10 @@ class _StudioPageState extends State<StudioPage> {
         Row(
           children: [
             Expanded(child: _title('画布', c.imageName)),
-            IconButton(
-              tooltip: '旋转 90°',
-              onPressed: () => c.updateSettings(
-                c.settings.copyWith(rotation: (c.settings.rotation + 1) % 4),
-              ),
-              icon: const Icon(Icons.rotate_right_rounded),
+            TextButton.icon(
+              onPressed: _openingEditor ? null : _editCrop,
+              icon: const Icon(Icons.crop_rotate_rounded),
+              label: const Text('裁切'),
             ),
             PopupMenuButton<String>(
               tooltip: '导出与示例',
@@ -511,7 +548,7 @@ class _StudioPageState extends State<StudioPage> {
                                   ? c.image!.original
                                   : c.image!.preview,
                               gaplessPlayback: true,
-                              filterQuality: FilterQuality.none,
+                              filterQuality: FilterQuality.medium,
                               fit: BoxFit.contain,
                             ),
                           ),
@@ -592,7 +629,7 @@ class _StudioPageState extends State<StudioPage> {
         const SizedBox(height: 20),
         Row(
           children: [
-            Expanded(child: _preset('照片', DitherMode.floyd)),
+            Expanded(child: _preset('照片', DitherMode.perceptual)),
             const SizedBox(width: 5),
             Expanded(child: _preset('插画', DitherMode.atkinson)),
             const SizedBox(width: 5),
@@ -604,7 +641,7 @@ class _StudioPageState extends State<StudioPage> {
           initialValue: c.settings.mode,
           key: ValueKey(c.settings.mode),
           isExpanded: true,
-          decoration: const InputDecoration(labelText: '抖动算法'),
+          decoration: const InputDecoration(labelText: '图像重建方式'),
           items: DitherMode.values
               .map(
                 (m) => DropdownMenuItem(
@@ -623,6 +660,23 @@ class _StudioPageState extends State<StudioPage> {
           style: const TextStyle(fontSize: 11, color: muted, height: 1.6),
         ),
         const SizedBox(height: 18),
+        if (c.settings.mode == DitherMode.perceptual)
+          _slider(
+            '观看柔和度',
+            c.settings.softness,
+            0,
+            1,
+            (v) => c.settings.copyWith(softness: v),
+          ),
+        if (c.settings.mode == DitherMode.perceptual ||
+            c.settings.mode == DitherMode.blueNoise)
+          _slider(
+            '纸白保护',
+            c.settings.paperWhite,
+            0,
+            .15,
+            (v) => c.settings.copyWith(paperWhite: v),
+          ),
         _slider(
           '亮度',
           c.settings.brightness,
@@ -644,13 +698,15 @@ class _StudioPageState extends State<StudioPage> {
           2,
           (v) => c.settings.copyWith(saturation: v),
         ),
-        _slider(
-          '抖动强度',
-          c.settings.strength,
-          0,
-          1,
-          (v) => c.settings.copyWith(strength: v),
-        ),
+        if (c.settings.mode != DitherMode.perceptual &&
+            c.settings.mode != DitherMode.blueNoise)
+          _slider(
+            '抖动强度',
+            c.settings.strength,
+            0,
+            1,
+            (v) => c.settings.copyWith(strength: v),
+          ),
         const Divider(height: 24),
         Row(
           children: [
@@ -681,24 +737,28 @@ class _StudioPageState extends State<StudioPage> {
               2,
               (v) => c.settings.copyWith(gamma: v),
             ),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('感知色彩匹配', style: TextStyle(fontSize: 12)),
-              subtitle: const Text(
-                'OKLab 色彩距离',
-                style: TextStyle(fontSize: 10),
+            if (c.settings.mode != DitherMode.perceptual &&
+                c.settings.mode != DitherMode.blueNoise)
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('感知色彩匹配', style: TextStyle(fontSize: 12)),
+                subtitle: const Text(
+                  'OKLab 色彩距离',
+                  style: TextStyle(fontSize: 10),
+                ),
+                value: c.settings.perceptual,
+                onChanged: (v) =>
+                    c.updateSettings(c.settings.copyWith(perceptual: v)),
               ),
-              value: c.settings.perceptual,
-              onChanged: (v) =>
-                  c.updateSettings(c.settings.copyWith(perceptual: v)),
-            ),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('蛇形扫描', style: TextStyle(fontSize: 12)),
-              value: c.settings.serpentine,
-              onChanged: (v) =>
-                  c.updateSettings(c.settings.copyWith(serpentine: v)),
-            ),
+            if (c.settings.mode != DitherMode.perceptual &&
+                c.settings.mode != DitherMode.blueNoise)
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('蛇形扫描', style: TextStyle(fontSize: 12)),
+                value: c.settings.serpentine,
+                onChanged: (v) =>
+                    c.updateSettings(c.settings.copyWith(serpentine: v)),
+              ),
           ],
         ),
         const SizedBox(height: 12),

@@ -114,7 +114,7 @@ void main() {
         height: 16,
       ),
     );
-    for (final mode in DitherMode.values.skip(1)) {
+    for (final mode in DitherMode.values.where((m)=>m!=DitherMode.none)) {
       final out = processImage(
         ProcessRequest(bytes, ImageSettings(mode: mode), width: 32, height: 16),
       );

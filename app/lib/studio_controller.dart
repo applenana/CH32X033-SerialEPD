@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'imaging/processor.dart';
+import 'imaging/geometry.dart';
 import 'protocol/client.dart';
 import 'protocol/codec.dart';
 import 'transport/serial_transport.dart';
@@ -16,6 +17,7 @@ class StudioController extends ChangeNotifier {
     : serial = serial ?? SerialService();
   ImageSettings settings = const ImageSettings();
   Uint8List? source;
+  CropSpec? crop;
   String imageName = '日落山野 · 内置示例';
   ProcessedImage? image;
   List<DevicePort> ports = [];
@@ -129,7 +131,7 @@ class StudioController extends ChangeNotifier {
       try {
         final result = await compute(
           processImage,
-          ProcessRequest(source, settings),
+          ProcessRequest(source, settings, crop: crop),
         );
         if (_disposed) break;
         if (revision == _revision) {
@@ -164,6 +166,7 @@ class StudioController extends ChangeNotifier {
       final bytes = file.bytes ?? await File(file.path!).readAsBytes();
       if (_disposed) return;
       source = bytes;
+      crop = null;
       imageName = file.name;
       settings = settings.copyWith(rotation: 0);
       scheduleProcess(immediate: true);
@@ -174,7 +177,16 @@ class StudioController extends ChangeNotifier {
 
   void useDemo() {
     source = null;
+    crop = null;
     imageName = '日落山野 · 内置示例';
+    scheduleProcess(immediate: true);
+  }
+
+  Future<Uint8List> editingSource() async =>
+      source ?? await compute(sampleSource, null);
+  void applyCrop(CropSpec value) {
+    crop = value;
+    settings = settings.copyWith(rotation: 0, cover: false);
     scheduleProcess(immediate: true);
   }
 

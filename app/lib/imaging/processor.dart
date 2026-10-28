@@ -2,8 +2,12 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import '../protocol/codec.dart';
+import 'geometry.dart';
+import 'reconstruction.dart';
 
 enum DitherMode {
+  perceptual('感知重建 · DBS', '优化观看尺度下的颜色与网点，计算较慢'),
+  blueNoise('蓝噪声 · 色彩覆盖', '线性光混色，减少规则纹理与误差串色'),
   none('直接量化', '清晰文字与色块，保留干净边缘'),
   floyd('Floyd–Steinberg', '均衡细节与层次，适合大多数照片'),
   atkinson('Atkinson', '轻盈颗粒与鲜明对比，适合插画'),
@@ -21,11 +25,17 @@ enum DitherMode {
 
 class ImageSettings {
   final DitherMode mode;
-  final double brightness, contrast, saturation, gamma, strength;
+  final double brightness,
+      contrast,
+      saturation,
+      gamma,
+      strength,
+      softness,
+      paperWhite;
   final int rotation;
   final bool cover, perceptual, serpentine;
   const ImageSettings({
-    this.mode = DitherMode.floyd,
+    this.mode = DitherMode.perceptual,
     this.brightness = 0,
     this.contrast = 1,
     this.saturation = 1,
@@ -35,6 +45,8 @@ class ImageSettings {
     this.cover = false,
     this.perceptual = true,
     this.serpentine = true,
+    this.softness = .5,
+    this.paperWhite = .07,
   });
   ImageSettings copyWith({
     DitherMode? mode,
@@ -47,6 +59,8 @@ class ImageSettings {
     bool? cover,
     bool? perceptual,
     bool? serpentine,
+    double? softness,
+    double? paperWhite,
   }) => ImageSettings(
     mode: mode ?? this.mode,
     brightness: brightness ?? this.brightness,
@@ -58,6 +72,8 @@ class ImageSettings {
     cover: cover ?? this.cover,
     perceptual: perceptual ?? this.perceptual,
     serpentine: serpentine ?? this.serpentine,
+    softness: softness ?? this.softness,
+    paperWhite: paperWhite ?? this.paperWhite,
   );
   Map<String, dynamic> toJson() => {
     'mode': mode.name,
@@ -70,6 +86,8 @@ class ImageSettings {
     'cover': cover,
     'perceptual': perceptual,
     'serpentine': serpentine,
+    'softness': softness,
+    'paperWhite': paperWhite,
   };
   factory ImageSettings.fromJson(Map<String, dynamic> json) {
     double value(String key, double fallback, double lo, double hi) {
@@ -80,7 +98,7 @@ class ImageSettings {
     return ImageSettings(
       mode:
           DitherMode.values.where((m) => m.name == json['mode']).firstOrNull ??
-          DitherMode.floyd,
+          DitherMode.perceptual,
       brightness: value('brightness', 0, -.3, .3),
       contrast: value('contrast', 1, .5, 1.8),
       saturation: value('saturation', 1, 0, 2),
@@ -90,6 +108,8 @@ class ImageSettings {
       cover: json['cover'] == true,
       perceptual: json['perceptual'] != false,
       serpentine: json['serpentine'] != false,
+      softness: value('softness', .5, 0, 1),
+      paperWhite: value('paperWhite', .07, 0, .15),
     );
   }
 }
@@ -98,11 +118,13 @@ class ProcessRequest {
   final Uint8List? source;
   final ImageSettings settings;
   final int width, height;
+  final CropSpec? crop;
   const ProcessRequest(
     this.source,
     this.settings, {
     this.width = epdWidth,
     this.height = epdHeight,
+    this.crop,
   });
 }
 
@@ -110,14 +132,16 @@ class ProcessedImage {
   final Uint8List preview, original, packed, indices;
   final List<int> counts;
   final int milliseconds;
+  final Reconstruction? reconstruction;
   const ProcessedImage(
     this.preview,
     this.original,
     this.packed,
     this.indices,
     this.counts,
-    this.milliseconds,
-  );
+    this.milliseconds, [
+    this.reconstruction,
+  ]);
 }
 
 const palette = <List<double>>[
@@ -299,23 +323,12 @@ ProcessedImage processImage(ProcessRequest request) {
   if (request.source == null) {
     source = demoImage();
   } else {
-    final data = request.source!;
-    if (data.length > 25 * 1024 * 1024) {
-      throw const FormatException('图片文件超过 25 MB，请先缩小');
-    }
-    final decoder = img.findDecoderForData(data);
-    final info = decoder?.startDecode(data);
-    if (info == null) {
-      throw const FormatException('无法读取图片，请使用 PNG、JPEG、WebP 或 BMP');
-    }
-    if (info.width * info.height > 24000000) {
-      throw const FormatException('图片超过 2400 万像素，请先缩小');
-    }
-    final decoded = decoder!.decodeFrame(0);
-    if (decoded == null) throw const FormatException('图片解码失败');
-    source = img.bakeOrientation(decoded);
+    source = decodeSource(request.source!);
   }
   if (s.rotation != 0) source = img.copyRotate(source, angle: 90 * s.rotation);
+  if (request.crop != null) {
+    source = frameImage(source, request.crop!, w, h, cover: s.cover);
+  }
   // Crop before resizing: a 1 x 24000 panorama must not allocate a gigantic
   // intermediate image in cover mode.
   if (s.cover) {
@@ -375,6 +388,36 @@ ProcessedImage processImage(ProcessRequest request) {
   }
   final indices = Uint8List(w * h), counts = List.filled(4, 0);
   final output = img.Image(width: w, height: h, numChannels: 3);
+  if (s.mode == DitherMode.perceptual || s.mode == DitherMode.blueNoise) {
+    final result = reconstruct(
+      rgb,
+      w,
+      h,
+      optimize: s.mode == DitherMode.perceptual,
+      softness: s.softness,
+      paperWhite: s.paperWhite,
+    );
+    for (var i = 0; i < w * h; i++) {
+      final index = result.indices[i], color = palette[index];
+      counts[index]++;
+      output.setPixelRgb(
+        i % w,
+        i ~/ w,
+        (color[0] * 255).round(),
+        (color[1] * 255).round(),
+        (color[2] * 255).round(),
+      );
+    }
+    return ProcessedImage(
+      Uint8List.fromList(img.encodePng(output)),
+      Uint8List.fromList(img.encodePng(original)),
+      packIndices(result.indices),
+      result.indices,
+      counts,
+      clock.elapsedMilliseconds,
+      result,
+    );
+  }
   final kernel = _kernels[s.mode];
   final divisor = (_divisors[s.mode] ?? 1).toDouble();
   final ordered = s.mode == DitherMode.bayer4 || s.mode == DitherMode.bayer8;
@@ -435,6 +478,8 @@ ProcessedImage processImage(ProcessRequest request) {
 }
 
 /// Local geometric sample, generated without a network or bundled photo license.
+Uint8List sampleSource(Object? _) =>
+    Uint8List.fromList(img.encodePng(demoImage()));
 img.Image demoImage() {
   const w = 768, h = 552;
   final image = img.Image(width: w, height: h, numChannels: 3);
