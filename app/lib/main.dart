@@ -267,7 +267,7 @@ class _StudioPageState extends State<StudioPage> {
           onPressed: () => showAboutDialog(
             context: context,
             applicationName: '墨屿 · Ink Studio',
-            applicationVersion: '0.3.4',
+            applicationVersion: '0.4.0',
             children: const [
               Text(
                 '面向黑 / 白 / 黄 / 红电子纸的离线图像工作台。\nSEP/1 · Windows 串口与 Android USB OTG。',
@@ -629,6 +629,36 @@ class _StudioPageState extends State<StudioPage> {
       children: [
         _title('四色调色室', '为电子纸，找到恰好的层次。', icon: Icons.tune_rounded),
         const SizedBox(height: 12),
+        FilledButton.icon(
+          onPressed: c.autoTuning
+              ? c.cancelAuto
+              : c.transferring
+              ? null
+              : c.autoAdjust,
+          icon: Icon(
+            c.autoTuning ? Icons.stop_rounded : Icons.auto_fix_high_rounded,
+            size: 18,
+          ),
+          label: Text(c.autoTuning ? '取消 AUTO' : 'AUTO · 自动优化'),
+        ),
+        if (c.autoTuning) ...[
+          const SizedBox(height: 8),
+          LinearProgressIndicator(value: c.autoProgress),
+          const SizedBox(height: 6),
+          Text(
+            c.autoPhase ?? '正在分析原图…',
+            style: const TextStyle(fontSize: 11, color: muted),
+          ),
+        ] else if (c.autoReport != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            c.autoReport!,
+            style: const TextStyle(fontSize: 11, color: muted, height: 1.6),
+          ),
+          if (c.canUndoAuto)
+            TextButton(onPressed: c.undoAuto, child: const Text('撤销 AUTO')),
+        ],
+        const SizedBox(height: 8),
         OutlinedButton.icon(
           onPressed: c.resetSettings,
           icon: const Icon(Icons.restart_alt_rounded, size: 18),
@@ -674,60 +704,6 @@ class _StudioPageState extends State<StudioPage> {
           style: const TextStyle(fontSize: 11, color: muted, height: 1.6),
         ),
         const SizedBox(height: 18),
-        if (c.settings.mode == DitherMode.perceptual)
-          _slider(
-            '观看柔和度',
-            c.settings.softness,
-            0,
-            1,
-            (v) => c.settings.copyWith(softness: v),
-          ),
-        _slider(
-          '自然映射',
-          c.settings.naturalMapping,
-          0,
-          1,
-          (v) => c.settings.copyWith(naturalMapping: v),
-        ),
-        const Padding(
-          padding: EdgeInsets.only(bottom: 14),
-          child: Text(
-            '减少灰色与冷色区域的红黄杂点。调高更柔和，调低保留更多色彩；0 为旧版映射。',
-            style: TextStyle(fontSize: 10, color: muted, height: 1.6),
-          ),
-        ),
-        if (c.settings.mode == DitherMode.perceptual ||
-            c.settings.mode == DitherMode.blueNoise)
-          _slider(
-            '纸白保护',
-            c.settings.paperWhite,
-            0,
-            .15,
-            (v) => c.settings.copyWith(paperWhite: v),
-          ),
-        _slider(
-          '颜色诱导 · 实验',
-          c.settings.colorInduction,
-          0,
-          1,
-          (v) => c.settings.copyWith(colorInduction: v),
-        ),
-        if (c.settings.colorInduction > 0)
-          _slider(
-            '诱导范围（像素）',
-            c.settings.inductionRadius.toDouble(),
-            2,
-            24,
-            (v) => c.settings.copyWith(inductionRadius: v.round()),
-            divisions: 22,
-          ),
-        const Padding(
-          padding: EdgeInsets.only(bottom: 14),
-          child: Text(
-            '0 为关闭。在蓝／青区域内沿边缘加入暖黄对比，尝试让灰色显冷；可能出现黄边，不会增加真实蓝色。',
-            style: TextStyle(fontSize: 10, color: muted, height: 1.6),
-          ),
-        ),
         _slider(
           '亮度',
           c.settings.brightness,
@@ -849,6 +825,36 @@ class _StudioPageState extends State<StudioPage> {
           '原生黑白黄红四色；灰阶由网点混色呈现。实体颜色受光线与面板批次影响。',
           style: TextStyle(fontSize: 10, color: muted, height: 1.6),
         ),
+        const Divider(height: 28),
+        _slider(
+          '观看柔和度',
+          c.settings.softness,
+          0,
+          1,
+          (v) => c.settings.copyWith(softness: v),
+          enabled: c.settings.mode == DitherMode.perceptual,
+        ),
+        _slider(
+          '自然映射',
+          c.settings.naturalMapping,
+          0,
+          1,
+          (v) => c.settings.copyWith(naturalMapping: v),
+        ),
+        _slider(
+          '纸白保护',
+          c.settings.paperWhite,
+          0,
+          .15,
+          (v) => c.settings.copyWith(paperWhite: v),
+          enabled:
+              c.settings.mode == DitherMode.perceptual ||
+              c.settings.mode == DitherMode.blueNoise,
+        ),
+        const Text(
+          '观看柔和度用于 DBS；纸白保护用于 DBS 和蓝噪声。默认 1 / 1 / 0，可随时手动微调。',
+          style: TextStyle(fontSize: 10, color: muted, height: 1.6),
+        ),
       ],
     ),
   );
@@ -860,11 +866,6 @@ class _StudioPageState extends State<StudioPage> {
     onPressed: () => c.updateSettings(
       ImageSettings(
         mode: mode,
-        naturalMapping: mode == DitherMode.none
-            ? 0
-            : mode == DitherMode.perceptual
-            ? .65
-            : .35,
         rotation: c.settings.rotation,
         cover: c.settings.cover,
       ),
@@ -877,7 +878,7 @@ class _StudioPageState extends State<StudioPage> {
     double min,
     double max,
     ImageSettings Function(double) update, {
-    int? divisions,
+    bool enabled = true,
   }) => Column(
     children: [
       Row(
@@ -885,9 +886,7 @@ class _StudioPageState extends State<StudioPage> {
           Text(name, style: const TextStyle(fontSize: 12)),
           const Spacer(),
           Text(
-            divisions == null
-                ? value.toStringAsFixed(2)
-                : value.round().toString(),
+            value.toStringAsFixed(2),
             style: const TextStyle(fontSize: 11, color: muted),
           ),
         ],
@@ -896,8 +895,7 @@ class _StudioPageState extends State<StudioPage> {
         value: value,
         min: min,
         max: max,
-        divisions: divisions,
-        onChanged: (v) => c.updateSettings(update(v)),
+        onChanged: enabled ? (v) => c.updateSettings(update(v)) : null,
       ),
     ],
   );

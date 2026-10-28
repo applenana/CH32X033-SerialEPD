@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'imaging/processor.dart';
 import 'imaging/geometry.dart';
+import 'imaging/auto_tune_job.dart';
 import 'protocol/client.dart';
 import 'protocol/codec.dart';
 import 'transport/serial_transport.dart';
@@ -20,6 +21,12 @@ class StudioController extends ChangeNotifier {
   CropSpec? crop;
   String imageName = '日落山野 · 内置示例';
   ProcessedImage? image;
+  bool autoTuning = false, _autoRequested = false;
+  String? autoPhase, autoReport;
+  double autoProgress = 0;
+  AutoTuneJob? _autoJob;
+  ImageSettings? _beforeAuto;
+  bool get canUndoAuto => _beforeAuto != null && !autoTuning && !transferring;
   List<DevicePort> ports = [];
   String? selectedPort;
   int? panel;
@@ -77,6 +84,7 @@ class StudioController extends ChangeNotifier {
       /* Invalid old preferences must not prevent startup. */
     }
     if (_disposed) return;
+    unawaited(_saveSettings()); // Persist the one-time defaults migration.
     scheduleProcess(immediate: true);
     await scan();
   }
@@ -118,7 +126,12 @@ class StudioController extends ChangeNotifier {
     }
   }
 
-  void scheduleProcess({bool immediate = false}) {
+  void scheduleProcess({bool immediate = false, bool forAuto = false}) {
+    if (!forAuto) {
+      _stopAuto();
+      _beforeAuto = null;
+      autoReport = null;
+    }
     _revision++;
     processing = true;
     error = null;
@@ -138,19 +151,55 @@ class StudioController extends ChangeNotifier {
     while (!_disposed) {
       final revision = _revision;
       try {
-        final result = await compute(
-          processImage,
-          ProcessRequest(source, settings, crop: crop),
-        );
-        if (_disposed) break;
-        if (revision == _revision) {
-          image = result;
-          _renderedRevision = revision;
+        final request = ProcessRequest(source, settings, crop: crop);
+        if (_autoRequested) {
+          _autoRequested = false;
+          final job = AutoTuneJob(
+            request,
+            onProgress: (p) {
+              if (!_disposed && revision == _revision && autoTuning) {
+                autoPhase = p.phase;
+                autoProgress = p.fraction;
+                changed();
+              }
+            },
+          );
+          _autoJob = job;
+          final result = await job.result;
+          if (_disposed) break;
+          if (revision == _revision) {
+            settings = result.settings;
+            image = result.image;
+            _renderedRevision = revision;
+            autoTuning = false;
+            _autoJob = null;
+            autoReport =
+                '${result.sourceKind} · 两轮比较 ${result.candidates} 组参数\n'
+                '已选择 ${settings.mode.label}，可继续微调或撤销。';
+            notice = 'AUTO 已完成：原图初调 → 四色图复评微调';
+            unawaited(_saveSettings());
+          }
+        } else {
+          final result = await compute(processImage, request);
+          if (_disposed) break;
+          if (revision == _revision) {
+            image = result;
+            _renderedRevision = revision;
+          }
         }
+      } on AutoCancelled {
+        // The new revision (manual edit, cancel or import) is processed below.
       } catch (e) {
         if (revision == _revision) {
           error = e.toString();
-          image = null;
+          if (autoTuning) {
+            _stopAuto();
+            _beforeAuto = null;
+            // Settings were not applied yet; restore the current preview.
+            _revision++;
+          } else {
+            image = null;
+          }
         }
       }
       if (revision == _revision) break;
@@ -158,6 +207,40 @@ class StudioController extends ChangeNotifier {
     _running = false;
     processing = false;
     changed();
+  }
+
+  void autoAdjust() {
+    if (_disposed || autoTuning || transferring) return;
+    _beforeAuto = settings;
+    autoReport = null;
+    autoTuning = true;
+    _autoRequested = true;
+    autoPhase = _running ? '等待当前图像处理完成…' : '准备分析原图…';
+    autoProgress = 0;
+    notice = null;
+    scheduleProcess(immediate: true, forAuto: true);
+  }
+
+  void _stopAuto() {
+    _autoRequested = false;
+    _autoJob?.cancel();
+    _autoJob = null;
+    autoTuning = false;
+    autoPhase = null;
+    autoProgress = 0;
+  }
+
+  void cancelAuto() {
+    if (!autoTuning) return;
+    notice = '已取消 AUTO，保留原参数';
+    scheduleProcess(immediate: true);
+  }
+
+  void undoAuto() {
+    if (!canUndoAuto) return;
+    final previous = _beforeAuto!;
+    notice = '已恢复 AUTO 之前的参数';
+    updateSettings(previous);
   }
 
   Future<void> importImage() async {
@@ -195,7 +278,7 @@ class StudioController extends ChangeNotifier {
       source ?? await compute(sampleSource, null);
   void applyCrop(CropSpec value) {
     crop = value;
-    settings = settings.copyWith(rotation: 0, cover: false);
+    settings = settings.copyWith(rotation: 0);
     scheduleProcess(immediate: true);
   }
 
@@ -377,6 +460,7 @@ class StudioController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _stopAuto();
     cancelConnect();
     _debounce?.cancel();
     unawaited(_keepAwake(false));

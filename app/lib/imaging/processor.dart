@@ -280,8 +280,11 @@ class PreparedImage {
 ProcessedImage processImage(ProcessRequest request) {
   final clock = Stopwatch()..start();
   final prepared = prepareImage(request);
-  return processPrepared(prepared, request.settings,
-      preparationMilliseconds: clock.elapsedMilliseconds);
+  return processPrepared(
+    prepared,
+    request.settings,
+    preparationMilliseconds: clock.elapsedMilliseconds,
+  );
 }
 
 PreparedImage prepareImage(ProcessRequest request) {
@@ -356,14 +359,19 @@ PreparedImage prepareImage(ProcessRequest request) {
   return PreparedImage(rgb, Uint8List.fromList(img.encodePng(original)), w, h);
 }
 
-ProcessedImage processPrepared(PreparedImage prepared, ImageSettings s,
-    {int preparationMilliseconds = 0}) {
+ProcessedImage processPrepared(
+  PreparedImage prepared,
+  ImageSettings s, {
+  int preparationMilliseconds = 0,
+}) {
   final clock = Stopwatch()..start();
   final w = prepared.width, h = prepared.height;
   final rgb = Float32List(prepared.rgb.length);
   for (var i = 0; i < w * h; i++) {
     final at = i * 3;
-    final l = .2126 * prepared.rgb[at] + .7152 * prepared.rgb[at + 1] +
+    final l =
+        .2126 * prepared.rgb[at] +
+        .7152 * prepared.rgb[at + 1] +
         .0722 * prepared.rgb[at + 2];
     for (var c = 0; c < 3; c++) {
       var v = l + (prepared.rgb[at + c] - l) * s.saturation;

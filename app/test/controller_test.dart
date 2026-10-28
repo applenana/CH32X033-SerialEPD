@@ -12,16 +12,87 @@ class EmptySerial extends SerialService {
   Future<List<DevicePort>> list() async => [];
 }
 
-Future<void> settled(StudioController c) async {
+Future<void> settled(StudioController c, {int timeoutMs = 20000}) async {
   final clock = Stopwatch()..start();
   while (c.processing) {
-    if (clock.elapsedMilliseconds > 20000) throw TimeoutException('processor');
+    if (clock.elapsedMilliseconds > timeoutMs) {
+      throw TimeoutException('processor');
+    }
     await Future<void>.delayed(const Duration(milliseconds: 20));
   }
 }
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'AUTO cancel/manual edit cannot publish a stale frame; reset uses new defaults',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final c = StudioController(serial: EmptySerial());
+      final input = img.Image(width: 8, height: 8);
+      img.fill(input, color: img.ColorRgb8(255, 255, 255));
+      c.source = Uint8List.fromList(img.encodePng(input));
+      c.updateSettings(const ImageSettings(mode: DitherMode.none));
+      await settled(c);
+      c.autoAdjust();
+      while (c.autoProgress == 0 && c.autoTuning) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      c.updateSettings(
+        const ImageSettings(
+          mode: DitherMode.none,
+          brightness: -.3,
+          cover: false,
+        ),
+      );
+      await settled(c);
+      expect(c.autoTuning, false);
+      expect(c.autoReport, isNull);
+      expect(c.settings.brightness, -.3);
+      expect(c.settings.cover, false);
+      expect(c.fresh, true);
+      c.autoAdjust();
+      c.cancelAuto();
+      await settled(c);
+      expect(c.canUndoAuto, false);
+      expect(c.settings.brightness, -.3);
+      c.resetSettings();
+      await settled(c);
+      expect(c.settings.toJson(), const ImageSettings().toJson());
+      c.dispose();
+    },
+  );
+  test(
+    'Completed AUTO applies settings and supports one-step undo',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final c = StudioController(serial: EmptySerial());
+      final input = img.Image(width: 8, height: 8);
+      img.fill(input, color: img.ColorRgb8(0, 0, 0));
+      c.source = Uint8List.fromList(img.encodePng(input));
+      const previous = ImageSettings(
+        mode: DitherMode.none,
+        brightness: .1,
+        cover: false,
+      );
+      c.updateSettings(previous);
+      await settled(c);
+      c.autoAdjust();
+      await settled(c, timeoutMs: 90000);
+      expect(c.autoReport, isNotNull);
+      expect(c.autoTuning, false);
+      expect(c.canUndoAuto, true);
+      expect(c.settings.cover, false);
+      expect(c.fresh, true);
+      c.undoAuto();
+      await settled(c);
+      expect(c.settings.toJson(), previous.toJson());
+      expect(c.canUndoAuto, false);
+      expect(c.fresh, true);
+      c.dispose();
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
   test(
     'Rapid setting changes produce only the latest frame; bad file clears stale result',
     () async {

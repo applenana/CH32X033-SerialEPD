@@ -1,7 +1,7 @@
 name: ink_studio
 description: 四色墨水屏图像工作台，支持 Windows 串口与 Android USB OTG。
 publish_to: none
-version: 0.3.4+7
+version: 0.4.0+8
 environment:
   sdk: ^3.11.0
 dependencies:
