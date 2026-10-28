@@ -1,0 +1,25 @@
+// Optional per-command mirrors; never modifies user/global Gradle settings.
+// Usage from app/android: gradlew assembleRelease -I ../../tools/gradle-mirrors.init.gradle
+import org.gradle.api.artifacts.repositories.MavenArtifactRepository
+
+def mirror = { repo ->
+    if (!(repo instanceof MavenArtifactRepository)) return
+    def source = repo.url.toString()
+    if (source.startsWith('https://dl.google.com/dl/android/maven2') || source.startsWith('https://maven.google.com')) {
+        repo.url = uri('https://maven.aliyun.com/repository/google')
+    } else if (source.startsWith('https://repo.maven.apache.org/maven2') || source.startsWith('https://repo1.maven.org/maven2')) {
+        repo.url = uri('https://maven.aliyun.com/repository/central')
+    } else if (source.startsWith('https://plugins.gradle.org/m2')) {
+        repo.url = uri('https://maven.aliyun.com/repository/gradle-plugin')
+    } else if (source.startsWith('https://jcenter.bintray.com')) {
+        repo.url = uri('https://maven.aliyun.com/repository/public')
+    }
+}
+beforeSettings { settings ->
+    settings.pluginManagement.repositories.configureEach(mirror)
+    settings.dependencyResolutionManagement.repositories.configureEach(mirror)
+}
+allprojects {
+    buildscript.repositories.configureEach(mirror)
+    repositories.configureEach(mirror)
+}

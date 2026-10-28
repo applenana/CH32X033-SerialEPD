@@ -1,0 +1,900 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'imaging/processor.dart';
+import 'studio_controller.dart';
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const InkStudio());
+}
+
+const ink = Color(0xff203d3b),
+    paper = Color(0xfff5f4ef),
+    muted = Color(0xff78817c);
+
+class InkStudio extends StatelessWidget {
+  final StudioController? controller;
+  const InkStudio({super.key, this.controller});
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    title: '墨屿 · Ink Studio',
+    debugShowCheckedModeBanner: false,
+    locale: const Locale('zh', 'CN'),
+    supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
+    localizationsDelegates: GlobalMaterialLocalizations.delegates,
+    theme: ThemeData(
+      useMaterial3: true,
+      scaffoldBackgroundColor: paper,
+      fontFamilyFallback: const [
+        'Microsoft YaHei',
+        'Noto Sans CJK SC',
+        'sans-serif',
+      ],
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: ink,
+        surface: const Color(0xfffdfcf8),
+      ),
+      dividerColor: const Color(0xffe5e7df),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: const Color(0xfff4f5ef),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 14,
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: ink,
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 19),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      ),
+      sliderTheme: const SliderThemeData(
+        trackHeight: 3,
+        thumbShape: RoundSliderThumbShape(enabledThumbRadius: 6),
+      ),
+    ),
+    home: StudioPage(controller: controller),
+  );
+}
+
+class StudioPage extends StatefulWidget {
+  final StudioController? controller;
+  const StudioPage({super.key, this.controller});
+  @override
+  State<StudioPage> createState() => _StudioPageState();
+}
+
+class _StudioPageState extends State<StudioPage> {
+  late final StudioController c;
+  @override
+  void initState() {
+    super.initState();
+    c = widget.controller ?? StudioController();
+    if (widget.controller == null) c.initialize();
+  }
+
+  @override
+  void dispose() {
+    if (widget.controller == null) c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: c,
+    builder: (context, _) => LayoutBuilder(
+      builder: (context, box) {
+        final wide = box.maxWidth >= 1150, mobile = box.maxWidth < 700;
+        return Scaffold(
+          body: SafeArea(
+            child: Column(
+              children: [
+                _header(mobile),
+                Expanded(
+                  child: wide
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(
+                              width: 248,
+                              child: ListView(
+                                padding: const EdgeInsets.fromLTRB(
+                                  24,
+                                  12,
+                                  16,
+                                  24,
+                                ),
+                                children: [
+                                  _connection(),
+                                  const SizedBox(height: 20),
+                                  _guide(),
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              child: ListView(
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  12,
+                                  20,
+                                  24,
+                                ),
+                                children: [
+                                  _canvas(mobile),
+                                  const SizedBox(height: 20),
+                                  _transfer(),
+                                ],
+                              ),
+                            ),
+                            SizedBox(
+                              width: 310,
+                              child: ListView(
+                                padding: const EdgeInsets.fromLTRB(
+                                  0,
+                                  12,
+                                  24,
+                                  24,
+                                ),
+                                children: [_settings()],
+                              ),
+                            ),
+                          ],
+                        )
+                      : ListView(
+                          padding: EdgeInsets.all(mobile ? 16 : 28),
+                          children: [
+                            mobile ? _compactConnection() : _connection(),
+                            const SizedBox(height: 20),
+                            _canvas(mobile),
+                            const SizedBox(height: 20),
+                            _settings(),
+                            const SizedBox(height: 20),
+                            _transfer(),
+                            const SizedBox(height: 16),
+                            _guide(),
+                          ],
+                        ),
+                ),
+                if (c.error != null || c.notice != null) _message(),
+              ],
+            ),
+          ),
+          bottomNavigationBar: mobile
+              ? SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                    child: _sendButton(),
+                  ),
+                )
+              : null,
+        );
+      },
+    ),
+  );
+  Widget _header(bool mobile) => Padding(
+    padding: EdgeInsets.fromLTRB(mobile ? 20 : 32, 24, mobile ? 20 : 32, 22),
+    child: Row(
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: ink,
+            borderRadius: BorderRadius.circular(13),
+          ),
+          child: const Icon(
+            Icons.landscape_rounded,
+            color: Color(0xfff6d56c),
+            size: 28,
+          ),
+        ),
+        const SizedBox(width: 12),
+        const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '墨屿',
+              style: TextStyle(
+                fontSize: 23,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 3,
+                color: ink,
+              ),
+            ),
+            Text(
+              'INK STUDIO',
+              style: TextStyle(fontSize: 9, letterSpacing: 2.4, color: muted),
+            ),
+          ],
+        ),
+        const Spacer(),
+        if (!mobile)
+          const Text(
+            '让喜欢的画面，停留久一点。',
+            style: TextStyle(color: muted, fontSize: 13),
+          ),
+        const SizedBox(width: 20),
+        IconButton(
+          tooltip: '关于与开源许可',
+          icon: const Icon(Icons.info_outline_rounded, size: 18),
+          onPressed: () => showAboutDialog(
+            context: context,
+            applicationName: '墨屿 · Ink Studio',
+            applicationVersion: '0.1.0',
+            children: const [
+              Text(
+                '面向黑 / 白 / 黄 / 红电子纸的离线图像工作台。\nSEP/1 · Windows 串口与 Android USB OTG。',
+              ),
+            ],
+          ),
+        ),
+        _pill('四色电子纸', const Color(0xffe8eadf)),
+      ],
+    ),
+  );
+  Widget _card(Widget child) => Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      color: const Color(0xfffdfcf8),
+      borderRadius: BorderRadius.circular(22),
+      border: Border.all(color: const Color(0xffe6e7df)),
+    ),
+    child: child,
+  );
+  Widget _pill(String text, Color bg) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    decoration: BoxDecoration(
+      color: bg,
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Text(
+      text,
+      style: const TextStyle(
+        fontSize: 11,
+        color: ink,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+  );
+  Widget _title(String text, String subtitle, {IconData? icon}) => Row(
+    children: [
+      if (icon != null) ...[
+        Icon(icon, size: 19, color: ink),
+        const SizedBox(width: 8),
+      ],
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              text,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: ink,
+              ),
+            ),
+            if (subtitle.isNotEmpty) ...[
+              const SizedBox(height: 5),
+              Text(
+                subtitle,
+                style: const TextStyle(fontSize: 11, color: muted),
+              ),
+            ],
+          ],
+        ),
+      ),
+    ],
+  );
+  Widget _compactConnection() => Container(
+    decoration: BoxDecoration(
+      color: const Color(0xfffdfcf8),
+      borderRadius: BorderRadius.circular(22),
+      border: Border.all(color: const Color(0xffe6e7df)),
+    ),
+    child: ExpansionTile(
+      shape: const Border(),
+      collapsedShape: const Border(),
+      leading: Icon(
+        c.connected ? Icons.usb_rounded : Icons.usb_off_rounded,
+        color: ink,
+      ),
+      title: const Text(
+        '我的设备',
+        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+      ),
+      subtitle: Text(
+        c.connected
+            ? '${c.selectedPort} · ${c.status?.label ?? '已连接'}'
+            : '点击连接 USB 设备',
+        style: const TextStyle(fontSize: 11, color: muted),
+      ),
+      children: [_connection()],
+    ),
+  );
+  Widget _connection() => _card(
+    Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _title('我的设备', 'USB CDC · 即连即用', icon: Icons.usb_rounded),
+        const SizedBox(height: 18),
+        if (c.connected) ...[
+          _pill(c.status?.label ?? '已连接', const Color(0xffe5efe5)),
+          const SizedBox(height: 12),
+          Text(
+            '${c.selectedPort} · 768 × 552',
+            style: const TextStyle(fontSize: 12, color: muted),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: c.transferring ? null : c.queryStatus,
+                  child: const Text('查询状态'),
+                ),
+              ),
+              IconButton(
+                tooltip: '断开连接',
+                onPressed: c.transferring ? null : c.disconnect,
+                icon: const Icon(Icons.link_off_rounded),
+              ),
+            ],
+          ),
+        ] else ...[
+          DropdownButtonFormField<String>(
+            initialValue: c.ports.any((p) => p.id == c.selectedPort)
+                ? c.selectedPort
+                : null,
+            key: ValueKey(
+              '${c.selectedPort}:${c.ports.map((p) => p.id).join()}',
+            ),
+            isExpanded: true,
+            hint: Text(
+              c.scanning ? '搜索设备…' : '选择 USB 设备',
+              style: const TextStyle(fontSize: 12),
+            ),
+            items: c.ports
+                .map(
+                  (p) => DropdownMenuItem(
+                    value: p.id,
+                    child: Text(
+                      '${p.recommended ? '● ' : ''}${p.name}',
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: c.connecting
+                ? null
+                : (v) {
+                    c.selectedPort = v;
+                    c.changed();
+                  },
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton(
+                  onPressed: c.connecting || c.selectedPort == null
+                      ? null
+                      : c.connect,
+                  child: Text(c.connecting ? '连接中…' : '连接设备'),
+                ),
+              ),
+              IconButton(
+                tooltip: '重新搜索串口',
+                onPressed: c.scanning || c.connecting ? null : c.scan,
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+            ],
+          ),
+          if (c.ports.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 10),
+              child: Text(
+                '连接 USB 数据线后搜索。安卓设备需要支持 USB OTG。',
+                style: TextStyle(fontSize: 11, height: 1.6, color: muted),
+              ),
+            ),
+        ],
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 12),
+          child: Divider(),
+        ),
+        DropdownButtonFormField<int>(
+          initialValue: c.panel,
+          key: ValueKey(c.panel),
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: '屏幕批次'),
+          hint: const Text('选择 A0 / A1'),
+          items: const [
+            DropdownMenuItem(value: 0, child: Text('A0 批次')),
+            DropdownMenuItem(value: 1, child: Text('A1 批次')),
+          ],
+          onChanged: c.transferring ? null : c.selectPanel,
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          '按屏幕实际批次选择；两种初始化方式不同。',
+          style: TextStyle(fontSize: 11, height: 1.6, color: muted),
+        ),
+      ],
+    ),
+  );
+  Widget _canvas(bool mobile) => _card(
+    Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _title('画布', c.imageName)),
+            IconButton(
+              tooltip: '旋转 90°',
+              onPressed: () => c.updateSettings(
+                c.settings.copyWith(rotation: (c.settings.rotation + 1) % 4),
+              ),
+              icon: const Icon(Icons.rotate_right_rounded),
+            ),
+            PopupMenuButton<String>(
+              tooltip: '导出与示例',
+              onSelected: (v) {
+                if (v == 'demo') {
+                  c.useDemo();
+                } else {
+                  c.exportImage(raw: v == 'raw');
+                }
+              },
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                  value: 'png',
+                  enabled: c.fresh,
+                  child: const Text('导出四色 PNG'),
+                ),
+                PopupMenuItem(
+                  value: 'raw',
+                  enabled: c.fresh,
+                  child: const Text('导出 2bpp 原始帧'),
+                ),
+                const PopupMenuItem(value: 'demo', child: Text('使用内置示例')),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        Container(
+          padding: EdgeInsets.all(mobile ? 12 : 24),
+          decoration: BoxDecoration(
+            color: const Color(0xffeaece4),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: AspectRatio(
+            aspectRatio: 768 / 552,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Color(0x18203d3b),
+                        blurRadius: 18,
+                        offset: Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: c.image == null
+                      ? const Center(
+                          child: Icon(
+                            Icons.landscape_outlined,
+                            color: muted,
+                            size: 56,
+                          ),
+                        )
+                      : ClipRect(
+                          child: InteractiveViewer(
+                            minScale: 1,
+                            maxScale: 5,
+                            child: Image.memory(
+                              c.showOriginal
+                                  ? c.image!.original
+                                  : c.image!.preview,
+                              gaplessPlayback: true,
+                              filterQuality: FilterQuality.none,
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
+                ),
+                if (c.processing)
+                  Align(
+                    alignment: Alignment.topCenter,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                      margin: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: .94),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Text(
+                        '正在生成四色预览…',
+                        style: TextStyle(fontSize: 11, color: ink),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: false, label: Text('四色预览')),
+                ButtonSegment(value: true, label: Text('原图')),
+              ],
+              selected: {c.showOriginal},
+              showSelectedIcon: false,
+              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              onSelectionChanged: (v) {
+                c.showOriginal = v.first;
+                c.changed();
+              },
+            ),
+            const Text(
+              '768 × 552  /  2 bit',
+              style: TextStyle(fontSize: 11, color: muted),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        OutlinedButton.icon(
+          onPressed: c.importImage,
+          icon: const Icon(Icons.add_photo_alternate_outlined, size: 19),
+          label: const Padding(
+            padding: EdgeInsets.symmetric(vertical: 13),
+            child: Text('导入图片'),
+          ),
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'PNG / JPG / WebP / BMP · 可缩放查看细节',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 10, color: muted),
+        ),
+      ],
+    ),
+  );
+  Widget _settings() => _card(
+    Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _title('四色调色室', '为电子纸，找到恰好的层次。', icon: Icons.tune_rounded),
+        const SizedBox(height: 20),
+        Row(
+          children: [
+            Expanded(child: _preset('照片', DitherMode.floyd)),
+            const SizedBox(width: 5),
+            Expanded(child: _preset('插画', DitherMode.atkinson)),
+            const SizedBox(width: 5),
+            Expanded(child: _preset('文字', DitherMode.none)),
+          ],
+        ),
+        const SizedBox(height: 18),
+        DropdownButtonFormField<DitherMode>(
+          initialValue: c.settings.mode,
+          key: ValueKey(c.settings.mode),
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: '抖动算法'),
+          items: DitherMode.values
+              .map(
+                (m) => DropdownMenuItem(
+                  value: m,
+                  child: Text(m.label, style: const TextStyle(fontSize: 12)),
+                ),
+              )
+              .toList(),
+          onChanged: (m) {
+            if (m != null) c.updateSettings(c.settings.copyWith(mode: m));
+          },
+        ),
+        const SizedBox(height: 10),
+        Text(
+          c.settings.mode.description,
+          style: const TextStyle(fontSize: 11, color: muted, height: 1.6),
+        ),
+        const SizedBox(height: 18),
+        _slider(
+          '亮度',
+          c.settings.brightness,
+          -.3,
+          .3,
+          (v) => c.settings.copyWith(brightness: v),
+        ),
+        _slider(
+          '对比度',
+          c.settings.contrast,
+          .5,
+          1.8,
+          (v) => c.settings.copyWith(contrast: v),
+        ),
+        _slider(
+          '饱和度',
+          c.settings.saturation,
+          0,
+          2,
+          (v) => c.settings.copyWith(saturation: v),
+        ),
+        _slider(
+          '抖动强度',
+          c.settings.strength,
+          0,
+          1,
+          (v) => c.settings.copyWith(strength: v),
+        ),
+        const Divider(height: 24),
+        Row(
+          children: [
+            const Text('画面适配', style: TextStyle(fontSize: 12)),
+            const Spacer(),
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: false, label: Text('完整')),
+                ButtonSegment(value: true, label: Text('铺满')),
+              ],
+              selected: {c.settings.cover},
+              showSelectedIcon: false,
+              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              onSelectionChanged: (v) =>
+                  c.updateSettings(c.settings.copyWith(cover: v.first)),
+            ),
+          ],
+        ),
+        ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: EdgeInsets.zero,
+          title: const Text('高级调节', style: TextStyle(fontSize: 12)),
+          children: [
+            _slider(
+              'Gamma',
+              c.settings.gamma,
+              .5,
+              2,
+              (v) => c.settings.copyWith(gamma: v),
+            ),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('感知色彩匹配', style: TextStyle(fontSize: 12)),
+              subtitle: const Text(
+                'OKLab 色彩距离',
+                style: TextStyle(fontSize: 10),
+              ),
+              value: c.settings.perceptual,
+              onChanged: (v) =>
+                  c.updateSettings(c.settings.copyWith(perceptual: v)),
+            ),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('蛇形扫描', style: TextStyle(fontSize: 12)),
+              value: c.settings.serpentine,
+              onChanged: (v) =>
+                  c.updateSettings(c.settings.copyWith(serpentine: v)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: List.generate(
+            4,
+            (i) => Column(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: [
+                      const Color(0xff202923),
+                      Colors.white,
+                      const Color(0xffffd04a),
+                      const Color(0xffd95040),
+                    ][i],
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xffdcded6)),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  c.image == null
+                      ? ['黑', '白', '黄', '红'][i]
+                      : '${(c.image!.counts[i] / c.image!.indices.length * 100).round()}%',
+                  style: const TextStyle(fontSize: 10, color: muted),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          '预览使用标准四色，实体屏颜色会受光线与面板批次影响。',
+          style: TextStyle(fontSize: 10, color: muted, height: 1.6),
+        ),
+        TextButton(
+          onPressed: () => c.updateSettings(const ImageSettings()),
+          child: const Text('恢复默认', style: TextStyle(fontSize: 12)),
+        ),
+      ],
+    ),
+  );
+  Widget _preset(String name, DitherMode mode) => OutlinedButton(
+    style: OutlinedButton.styleFrom(
+      padding: const EdgeInsets.symmetric(horizontal: 5),
+      backgroundColor: c.settings.mode == mode ? const Color(0xffe9eddf) : null,
+    ),
+    onPressed: () => c.updateSettings(
+      ImageSettings(
+        mode: mode,
+        rotation: c.settings.rotation,
+        cover: c.settings.cover,
+      ),
+    ),
+    child: Text(name, style: const TextStyle(fontSize: 12)),
+  );
+  Widget _slider(
+    String name,
+    double value,
+    double min,
+    double max,
+    ImageSettings Function(double) update,
+  ) => Column(
+    children: [
+      Row(
+        children: [
+          Text(name, style: const TextStyle(fontSize: 12)),
+          const Spacer(),
+          Text(
+            value.toStringAsFixed(2),
+            style: const TextStyle(fontSize: 11, color: muted),
+          ),
+        ],
+      ),
+      Slider(
+        value: value,
+        min: min,
+        max: max,
+        onChanged: (v) => c.updateSettings(update(v)),
+      ),
+    ],
+  );
+  Widget _sendButton() => FilledButton.icon(
+    onPressed: c.canSend ? c.send : null,
+    icon: const Icon(Icons.send_rounded, size: 18),
+    label: Text(
+      c.transferring
+          ? c.progress?.phase ?? '正在连接设备…'
+          : !c.connected
+          ? '连接设备后发送'
+          : c.panel == null
+          ? '请先选择屏幕批次'
+          : c.status?.state == 3
+          ? '屏幕正在刷新'
+          : '发送到墨水屏',
+    ),
+  );
+  Widget _transfer() => _card(
+    Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _title(
+                c.progress?.phase ?? '把画面留在纸上',
+                c.transferring
+                    ? '请保持 USB 连接，刷新可能需要数分钟。'
+                    : '105,984 字节 · 整帧 CRC 校验',
+                icon: Icons.auto_awesome_outlined,
+              ),
+            ),
+            if (c.transferring && !(c.progress?.committed ?? false))
+              TextButton(onPressed: c.cancelTransfer, child: const Text('取消')),
+          ],
+        ),
+        if (c.transferring) ...[
+          const SizedBox(height: 16),
+          LinearProgressIndicator(
+            value: c.progress?.phase == '传输图像' ? c.progress!.fraction : null,
+            borderRadius: BorderRadius.circular(5),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            c.progress?.phase == '传输图像'
+                ? '${(c.progress!.fraction * 100).round()}% · 已由设备确认'
+                : '等待设备确认状态',
+            style: const TextStyle(fontSize: 11, color: muted),
+          ),
+        ],
+        const SizedBox(height: 18),
+        _sendButton(),
+      ],
+    ),
+  );
+  Widget _guide() => Padding(
+    padding: const EdgeInsets.all(8),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '从一张图片开始',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: ink,
+          ),
+        ),
+        const SizedBox(height: 12),
+        ...['01   连接设备，选择屏幕批次', '02   导入图片，调整四色效果', '03   发送画面，等待刷新完成'].map(
+          (t) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              t,
+              style: const TextStyle(fontSize: 11, color: muted, height: 1.5),
+            ),
+          ),
+        ),
+        const Text(
+          '离线处理 · 图片留在你的设备上',
+          style: TextStyle(fontSize: 10, color: muted),
+        ),
+      ],
+    ),
+  );
+  Widget _message() => Container(
+    color: c.error != null ? const Color(0xffffebe4) : const Color(0xffe5eee5),
+    padding: const EdgeInsets.fromLTRB(20, 8, 8, 8),
+    child: Row(
+      children: [
+        Icon(
+          c.error != null ? Icons.info_outline : Icons.check_circle_outline,
+          size: 17,
+          color: ink,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            c.error ?? c.notice!,
+            style: const TextStyle(fontSize: 12, height: 1.5, color: ink),
+          ),
+        ),
+        IconButton(
+          tooltip: '关闭提示',
+          onPressed: () {
+            c.error = null;
+            c.notice = null;
+            c.changed();
+          },
+          icon: const Icon(Icons.close, size: 16),
+        ),
+      ],
+    ),
+  );
+}
