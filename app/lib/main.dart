@@ -925,6 +925,8 @@ class _StudioPageState extends State<StudioPage> {
           0,
           1,
           (v) => c.settings.copyWith(gamutCompression: v),
+          enabled: c.settings.mode == DitherMode.perceptual ||
+              c.settings.mode == DitherMode.blueNoise,
         ),
         OutlinedButton.icon(
           onPressed: _editPalette,
@@ -937,7 +939,7 @@ class _StudioPageState extends State<StudioPage> {
             child: const Text('恢复理想色板'),
           ),
         const Text(
-          '动态范围和色域压缩对理想色板也生效；输入实测色板后会替换四个颜色点，但不会改变 2bpp 协议色号。默认值为 0，便于先观察原始效果。',
+          '动态范围：温和调整暗部与高光，保留纯黑纯白。色域压缩：仅用于 DBS / 蓝噪声，保持可达亮度，降低超色域偏色；域内颜色不变。自然映射较强时，色域滑块变化可能较小。两项默认关闭，并非越高越好。',
           style: TextStyle(fontSize: 10, color: muted, height: 1.6),
         ),
       ],

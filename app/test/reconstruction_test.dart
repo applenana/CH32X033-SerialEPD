@@ -8,23 +8,115 @@ import 'package:ink_studio/imaging/blue_noise.dart';
 import 'package:ink_studio/imaging/processor.dart';
 
 void main() {
+  test('Palette mapping preserves attainable luminance across compression', () {
+    final palettes = [
+      [
+        [0.0, 0.0, 0.0],
+        [1.0, 1.0, 1.0],
+        [1.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+      ],
+      [
+        [.01, .012, .009],
+        [.8, .78, .72],
+        [.6, .5, .06],
+        [.5, .04, .025],
+      ],
+    ];
+    double y(List<double> c) => .2126 * c[0] + .7152 * c[1] + .0722 * c[2];
+    for (final inks in palettes) {
+      for (var r = 0; r <= 4; r++) {
+        for (var g = 0; g <= 4; g++) {
+          for (var b = 0; b <= 4; b++) {
+            final input = [r / 4, g / 4, b / 4];
+            for (final amount in [0.0, .25, .5, .75, 1.0]) {
+              final mapped = projectToPalette(
+                input[0],
+                input[1],
+                input[2],
+                inks,
+                amount,
+              );
+              expect(
+                y(mapped),
+                closeTo(y(input).clamp(y(inks[0]), y(inks[1])), 1e-9),
+              );
+              final weights = paletteCoverage(mapped, inks);
+              for (var c = 0; c < 3; c++) {
+                final restored = List.generate(
+                  4,
+                  (i) => weights[i] * inks[i][c],
+                ).reduce((a, b) => a + b);
+                expect(restored, closeTo(mapped[c], 1e-9));
+              }
+            }
+          }
+        }
+      }
+      for (final ink in inks) {
+        expect(projectToPalette(ink[0], ink[1], ink[2], inks, 1), ink);
+      }
+    }
+  });
+  test('Measured swatch reaches reconstruction without double decoding', () {
+    final calibration = PaletteCalibration.fromRgb8(
+      black: [18, 20, 19],
+      white: [232, 230, 224],
+      yellow: [201, 186, 74],
+      red: [180, 62, 48],
+    );
+    final input = img.Image(width: 32, height: 32);
+    img.fill(input, color: img.ColorRgb8(180, 62, 48));
+    final result = processImage(
+      ProcessRequest(
+        Uint8List.fromList(img.encodePng(input)),
+        ImageSettings(
+          mode: DitherMode.blueNoise,
+          calibration: calibration,
+          naturalMapping: 0,
+        ),
+        width: 32,
+        height: 32,
+      ),
+    );
+    expect(result.indices.every((i) => i == 3), isTrue);
+  });
   test('Measured palette round-trips and rejects degenerate white point', () {
     final measured = PaletteCalibration.fromRgb8(
-      black: [18, 20, 19], white: [232, 230, 224],
-      yellow: [201, 186, 74], red: [180, 62, 48],
+      black: [18, 20, 19],
+      white: [232, 230, 224],
+      yellow: [201, 186, 74],
+      red: [180, 62, 48],
     );
-    expect(PaletteCalibration.fromJson(measured.toJson()).colors, measured.colors);
+    expect(
+      PaletteCalibration.fromJson(measured.toJson()).colors,
+      measured.colors,
+    );
     expect(measured.valid, isTrue);
-    expect(const PaletteCalibration(colors: [
-      [0, 0, 0], [0.01, 0.01, 0.01], [1, 1, 0], [1, 0, 0],
-    ]).valid, isFalse);
+    expect(
+      const PaletteCalibration(
+        colors: [
+          [0, 0, 0],
+          [0.01, 0.01, 0.01],
+          [1, 1, 0],
+          [1, 0, 0],
+        ],
+      ).valid,
+      isFalse,
+    );
   });
-  test('Dynamic and gamut compression are active without calibration', () {
-    final plain = projectToPalette(.05, .25, .85, const [
-      [0, 0, 0], [1, 1, 1], [1, 1, 0], [1, 0, 0],
+  test('Gamut compression changes out-of-gamut magenta without calibration', () {
+    final plain = projectToPalette(.8, .1, .6, const [
+      [0, 0, 0],
+      [1, 1, 1],
+      [1, 1, 0],
+      [1, 0, 0],
     ], 0);
-    final compressed = projectToPalette(.05, .25, .85, const [
-      [0, 0, 0], [1, 1, 1], [1, 1, 0], [1, 0, 0],
+    final compressed = projectToPalette(.8, .1, .6, const [
+      [0, 0, 0],
+      [1, 1, 1],
+      [1, 1, 0],
+      [1, 0, 0],
     ], 1);
     expect(compressed, isNot(plain));
   });
