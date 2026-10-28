@@ -24,6 +24,8 @@ class StudioController extends ChangeNotifier {
   String? selectedPort;
   int? panel;
   SepClient? client;
+  SepClient? _connectingClient;
+  int _connectGeneration = 0;
   Capabilities? capabilities;
   DeviceStatus? status;
   String? error, notice;
@@ -230,17 +232,25 @@ class StudioController extends ChangeNotifier {
   Future<void> connect() async {
     if (connecting || connected || selectedPort == null) return;
     connecting = true;
+    final generation = ++_connectGeneration;
     error = null;
     changed();
     SepClient? candidate;
     try {
       final port = ports.firstWhere((p) => p.id == selectedPort);
       candidate = SepClient(await serial.connect(port));
-      final info = await candidate.probe(Command.info);
+      if (_disposed || generation != _connectGeneration) {
+        await candidate.close();
+        return;
+      }
+      _connectingClient = candidate;
+      final info = await candidate.identify();
       final caps = Capabilities(info.extra);
       if (!caps.compatible) throw StateError('设备并非兼容的 SEP/1 四色墨水屏');
-      final current = await candidate.probe();
-      if (_disposed) {
+      final current = await candidate.probe().timeout(
+        const Duration(seconds: 3),
+      );
+      if (_disposed || generation != _connectGeneration) {
         await candidate.close();
         return;
       }
@@ -253,12 +263,27 @@ class StudioController extends ChangeNotifier {
       };
       notice = '设备已连接 · 固件 ${caps.version}';
     } catch (e) {
-      await candidate?.close();
-      report(e);
+      try {
+        await candidate?.close();
+      } catch (_) {}
+      if (generation == _connectGeneration) report(e);
     } finally {
-      connecting = false;
-      changed();
+      if (generation == _connectGeneration) {
+        _connectingClient = null;
+        connecting = false;
+        changed();
+      }
     }
+  }
+
+  void cancelConnect() {
+    ++_connectGeneration;
+    connecting = false;
+    final pending = _connectingClient;
+    _connectingClient = null;
+    if (pending != null) unawaited(pending.close().catchError((Object _) {}));
+    notice = '已取消连接，可以重新选择端口';
+    changed();
   }
 
   Future<void> disconnect() async {
@@ -345,6 +370,7 @@ class StudioController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    cancelConnect();
     _debounce?.cancel();
     unawaited(_keepAwake(false));
     unawaited(client?.close() ?? Future.value());

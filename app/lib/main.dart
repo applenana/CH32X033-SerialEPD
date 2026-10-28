@@ -267,7 +267,7 @@ class _StudioPageState extends State<StudioPage> {
           onPressed: () => showAboutDialog(
             context: context,
             applicationName: '墨屿 · Ink Studio',
-            applicationVersion: '0.3.0',
+            applicationVersion: '0.3.1',
             children: const [
               Text(
                 '面向黑 / 白 / 黄 / 红电子纸的离线图像工作台。\nSEP/1 · Windows 串口与 Android USB OTG。',
@@ -425,10 +425,12 @@ class _StudioPageState extends State<StudioPage> {
             children: [
               Expanded(
                 child: FilledButton(
-                  onPressed: c.connecting || c.selectedPort == null
+                  onPressed: c.connecting
+                      ? c.cancelConnect
+                      : c.selectedPort == null
                       ? null
                       : c.connect,
-                  child: Text(c.connecting ? '连接中…' : '连接设备'),
+                  child: Text(c.connecting ? '取消连接' : '连接设备'),
                 ),
               ),
               IconButton(

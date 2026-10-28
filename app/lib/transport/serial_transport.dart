@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:flutter_libserialport/flutter_libserialport.dart';
 import 'package:usb_serial/usb_serial.dart';
@@ -42,21 +43,22 @@ class SerialService {
         );
       }
     } else if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      for (final address in SerialPort.availablePorts) {
-        final p = SerialPort(address);
-        try {
+      final worker = await DesktopTransport.start();
+      try {
+        final rows = await worker.call('list') as List;
+        for (final row in rows) {
           result.add(
             DevicePort(
-              address,
-              address,
-              p.description ?? '串口设备',
-              vendorId: p.vendorId,
-              productId: p.productId,
+              row[0],
+              row[0],
+              row[1],
+              vendorId: row[2],
+              productId: row[3],
             ),
           );
-        } finally {
-          p.dispose();
         }
+      } finally {
+        await worker.close();
       }
     } else {
       throw UnsupportedError('此版本支持 Windows 与 Android USB OTG');
@@ -92,16 +94,177 @@ class SerialService {
         rethrow;
       }
     }
-    return DesktopTransport(device.id);
+    final worker = await DesktopTransport.start();
+    try {
+      await worker.call('open', device.id);
+      return worker;
+    } catch (_) {
+      await worker.close();
+      rethrow;
+    }
   }
 }
 
+// All native desktop calls, including open/configure/enumeration/close, belong
+// to this worker. A UI-side deadline remains live even if a driver stalls.
 class DesktopTransport implements SerialTransport {
+  final _messages = ReceivePort();
+  final _input = StreamController<Uint8List>.broadcast();
+  final _ready = Completer<SendPort>();
+  final _pending = <int, Completer<dynamic>>{};
+  Isolate? _isolate;
+  SendPort? _commands;
+  int _next = 0;
+  bool _closed = false;
+
+  DesktopTransport._() {
+    _messages.listen((message) {
+      if (message is! Map) {
+        _stop(StateError('串口后台已退出，请重新连接'));
+      } else if (message.containsKey('ready')) {
+        if (!_ready.isCompleted) _ready.complete(message['ready'] as SendPort);
+      } else if (message.containsKey('data')) {
+        if (!_closed) _input.add(message['data'] as Uint8List);
+      } else if (message.containsKey('fault')) {
+        _stop(StateError(message['fault'] as String));
+      } else {
+        final waiting = _pending.remove(message['id']);
+        if (waiting == null) return;
+        if (message.containsKey('error')) {
+          waiting.completeError(StateError(message['error'] as String));
+        } else {
+          waiting.complete(message['result']);
+        }
+      }
+    });
+  }
+
+  static Future<DesktopTransport> start() async {
+    final worker = DesktopTransport._();
+    try {
+      worker._isolate = await Isolate.spawn(
+        _desktopWorker,
+        worker._messages.sendPort,
+        onError: worker._messages.sendPort,
+        onExit: worker._messages.sendPort,
+      );
+      worker._commands = await worker._ready.future.timeout(
+        const Duration(seconds: 5),
+      );
+      return worker;
+    } catch (e) {
+      worker._stop(e);
+      rethrow;
+    }
+  }
+
+  Future<dynamic> call(String operation, [Object? value]) async {
+    if (_closed) throw StateError('串口已断开');
+    final id = ++_next, reply = Completer<dynamic>();
+    _pending[id] = reply;
+    _commands!.send([id, operation, value]);
+    try {
+      return await reply.future.timeout(
+        Duration(seconds: operation == 'close' ? 2 : 5),
+      );
+    } on TimeoutException {
+      final error = TimeoutException('串口操作超时，请检查端口或选择其他设备');
+      _stop(error);
+      throw error;
+    } finally {
+      _pending.remove(id);
+    }
+  }
+
+  void _stop(Object? error) {
+    if (_closed) return;
+    _closed = true;
+    final reason = error ?? StateError('串口已断开');
+    for (final reply in _pending.values) {
+      if (!reply.isCompleted) reply.completeError(reason);
+    }
+    _pending.clear();
+    if (error != null && _input.hasListener) _input.addError(error);
+    _isolate?.kill(priority: Isolate.immediate);
+    _messages.close();
+    unawaited(_input.close());
+  }
+
+  @override
+  Stream<Uint8List> get incoming => _input.stream;
+  @override
+  Future<void> write(Uint8List bytes) async {
+    await call('write', bytes);
+  }
+
+  @override
+  Future<void> close() async {
+    if (_closed) return;
+    try {
+      await call('close');
+    } finally {
+      _stop(null);
+    }
+  }
+}
+
+void _desktopWorker(SendPort output) {
+  final commands = ReceivePort();
+  _NativeDesktopTransport? port;
+  StreamSubscription<Uint8List>? subscription;
+  output.send({'ready': commands.sendPort});
+  commands.listen((dynamic message) async {
+    final id = message[0];
+    try {
+      dynamic result;
+      switch (message[1]) {
+        case 'list':
+          final rows = <List<Object?>>[];
+          for (final address in SerialPort.availablePorts) {
+            final p = SerialPort(address);
+            try {
+              rows.add([
+                address,
+                p.description ?? '串口设备',
+                p.vendorId,
+                p.productId,
+              ]);
+            } finally {
+              p.dispose();
+            }
+          }
+          result = rows;
+          break;
+        case 'open':
+          port = _NativeDesktopTransport(message[2] as String);
+          subscription = port!.incoming.listen(
+            (data) => output.send({'data': data}),
+            onError: (Object e) => output.send({'fault': e.toString()}),
+          );
+          break;
+        case 'write':
+          if (port == null) throw StateError('串口未打开');
+          await port!.write(message[2] as Uint8List);
+          break;
+        case 'close':
+          await subscription?.cancel();
+          await port?.close();
+          commands.close();
+          break;
+      }
+      output.send({'id': id, 'result': result});
+    } catch (e) {
+      output.send({'id': id, 'error': e.toString()});
+    }
+  });
+}
+
+class _NativeDesktopTransport implements SerialTransport {
   final SerialPort _port;
   final _input = StreamController<Uint8List>.broadcast();
   Timer? _timer;
   bool _closed = false;
-  DesktopTransport(String path) : _port = SerialPort(path) {
+  _NativeDesktopTransport(String path) : _port = SerialPort(path) {
     try {
       if (!_port.openReadWrite()) {
         throw StateError('端口打开失败：${SerialPort.lastError}');
@@ -123,7 +286,7 @@ class DesktopTransport implements SerialTransport {
           final count = _port.bytesAvailable;
           if (count < 0) throw StateError('串口连接已失效，请重新连接');
           if (count > 0) {
-            _input.add(_port.read(count.clamp(0, 4096), timeout: 0));
+            _input.add(_port.read(count.clamp(0, 4096), timeout: -1));
           }
         } catch (e, st) {
           _input.addError(e, st);
@@ -144,7 +307,7 @@ class DesktopTransport implements SerialTransport {
     var sent = 0;
     while (sent < bytes.length) {
       if (_closed) throw StateError('串口已断开');
-      final n = _port.write(Uint8List.sublistView(bytes, sent), timeout: 0);
+      final n = _port.write(Uint8List.sublistView(bytes, sent), timeout: -1);
       if (n < 0) throw StateError('串口写入失败');
       sent += n;
       if (watch.elapsed > const Duration(seconds: 3)) {
@@ -161,9 +324,12 @@ class DesktopTransport implements SerialTransport {
     if (_closed) return;
     _closed = true;
     _timer?.cancel();
-    _port.close();
-    _port.dispose();
-    await _input.close();
+    try {
+      _port.close();
+    } finally {
+      _port.dispose();
+      await _input.close();
+    }
   }
 }
 

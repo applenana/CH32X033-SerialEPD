@@ -2,6 +2,8 @@
 
 面向 CH32X033 SerialEPD 的 Flutter 四色图像工作台。支持 Windows x64 串口和 Android USB OTG；图像完全在本地处理，不上传云端。
 
+当前版本 **0.3.1**：修正串口无限阻塞、桌面串口后台隔离、连接限时与取消。本轮仅编译，测试由用户执行，见 [本版说明](../docs/release-0.3.1.md)。另见 [两个 NFC 项目的混色实现研究](../docs/nfc-image-research.md)。
+
 ![Windows 布局](../docs/images/ink-studio-desktop.png)
 
 ![裁切编辑](../docs/images/crop-editor.png)

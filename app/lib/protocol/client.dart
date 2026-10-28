@@ -82,18 +82,24 @@ class SepClient {
     onLinkError?.call(error);
   }
 
-  Future<DeviceStatus> _exchange(Packet packet) async {
+  Future<DeviceStatus> _exchange(
+    Packet packet, {
+    bool discovery = false,
+  }) async {
     if (_closed || _linkError != null) throw StateError('连接已中断，请重新连接设备');
     if (_busy) throw StateError('请等待当前设备操作完成');
     _busy = true;
     final wire = Uint8List.fromList([0, ...packet.encode()]);
     try {
-      for (var attempt = 0; attempt <= retries; attempt++) {
+      final attempts = discovery ? 0 : retries;
+      for (var attempt = 0; attempt <= attempts; attempt++) {
         _expected = packet;
         final completer = Completer<Packet>();
         _waiting = completer;
         // Install the listener BEFORE writing; a fast response must never be lost.
-        final response = completer.future.timeout(replyTimeout);
+        final response = completer.future.timeout(
+          discovery ? const Duration(seconds: 2) : replyTimeout,
+        );
         // Prevent a transport error during write from becoming an unhandled future.
         unawaited(
           response.then<void>((_) {}, onError: (Object _, StackTrace _) {}),
@@ -103,8 +109,12 @@ class SepClient {
           return DeviceStatus(await response);
         } on TimeoutException {
           if (_linkError != null) rethrow;
-          if (attempt == retries) {
-            throw TimeoutException('设备未应答，结果尚不确定。请先查询状态，避免重复刷新。');
+          if (attempt == attempts) {
+            throw TimeoutException(
+              discovery
+                  ? '该端口未响应 SEP/1，请选择正确的墨水屏设备'
+                  : '设备未应答，结果尚不确定。请先查询状态，避免重复刷新。',
+            );
           }
         }
       }
@@ -115,6 +125,9 @@ class SepClient {
       _busy = false;
     }
   }
+
+  Future<DeviceStatus> identify() =>
+      _exchange(Packet(Command.info, 0, 0), discovery: true);
 
   Future<DeviceStatus> probe([int command = Command.status]) async {
     if (command != Command.info && command != Command.status) {
