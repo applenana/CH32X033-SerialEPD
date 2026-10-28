@@ -1,0 +1,74 @@
+[
+  {
+    "mode": "perceptual",
+    "milliseconds": 812,
+    "mse_sigma1": 0.000995396523857813,
+    "mse_sigma2": 0.00029756520408486534
+  },
+  {
+    "mode": "blueNoise",
+    "milliseconds": 194,
+    "mse_sigma1": 0.0013328767955007603,
+    "mse_sigma2": 0.0003414726645372046
+  },
+  {
+    "mode": "none",
+    "milliseconds": 146,
+    "mse_sigma1": 0.09835794897443292,
+    "mse_sigma2": 0.09278624509277056
+  },
+  {
+    "mode": "floyd",
+    "milliseconds": 247,
+    "mse_sigma1": 0.028404065938196957,
+    "mse_sigma2": 0.02700236957397588
+  },
+  {
+    "mode": "atkinson",
+    "milliseconds": 197,
+    "mse_sigma1": 0.043461951837553726,
+    "mse_sigma2": 0.04151548909374446
+  },
+  {
+    "mode": "jjn",
+    "milliseconds": 213,
+    "mse_sigma1": 0.02887473741894125,
+    "mse_sigma2": 0.026794060344053728
+  },
+  {
+    "mode": "stucki",
+    "milliseconds": 213,
+    "mse_sigma1": 0.02860992257274325,
+    "mse_sigma2": 0.02673181312396995
+  },
+  {
+    "mode": "burkes",
+    "milliseconds": 207,
+    "mse_sigma1": 0.02853036546178298,
+    "mse_sigma2": 0.026681967851240773
+  },
+  {
+    "mode": "sierra",
+    "milliseconds": 207,
+    "mse_sigma1": 0.028689689996771642,
+    "mse_sigma2": 0.026758059109008726
+  },
+  {
+    "mode": "sierraLite",
+    "milliseconds": 192,
+    "mse_sigma1": 0.02861266666307398,
+    "mse_sigma2": 0.027226675007184654
+  },
+  {
+    "mode": "bayer4",
+    "milliseconds": 149,
+    "mse_sigma1": 0.07687061738202312,
+    "mse_sigma2": 0.07417072010770462
+  },
+  {
+    "mode": "bayer8",
+    "milliseconds": 150,
+    "mse_sigma1": 0.07684538959954502,
+    "mse_sigma2": 0.07412563900971286
+  }
+]

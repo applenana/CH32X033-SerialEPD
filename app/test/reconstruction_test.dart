@@ -4,8 +4,39 @@ import 'package:image/image.dart' as img;
 import 'package:ink_studio/imaging/reconstruction.dart';
 import 'package:ink_studio/imaging/geometry.dart';
 import 'package:ink_studio/imaging/blue_noise.dart';
+import 'package:ink_studio/imaging/processor.dart';
 
 void main() {
+  test('Compact algorithm list and legacy preference migration', () {
+    expect(DitherMode.values.map((m) => m.name).toSet(), {
+      'none',
+      'floyd',
+      'burkes',
+      'stucki',
+      'perceptual',
+      'blueNoise',
+    });
+    for (final entry in {
+      'atkinson': 'burkes',
+      'jjn': 'stucki',
+      'sierra': 'stucki',
+      'sierraLite': 'floyd',
+      'bayer4': 'blueNoise',
+      'bayer8': 'blueNoise',
+    }.entries) {
+      final settings = ImageSettings.fromJson({
+        'mode': entry.key,
+        'brightness': .1,
+      });
+      expect(settings.mode.name, entry.value);
+      expect(settings.brightness, .1);
+      expect(ImageSettings.fromJson(settings.toJson()).mode, settings.mode);
+    }
+    expect(
+      ImageSettings.fromJson({'mode': 'unrecognized'}).mode,
+      DitherMode.perceptual,
+    );
+  });
   test('Void-cluster ranks are a full deterministic permutation', () {
     final ranks = blueNoiseRanks.toList()..sort();
     expect(ranks, List.generate(128 * 128, (i) => i));

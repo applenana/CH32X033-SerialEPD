@@ -53,12 +53,6 @@ void main() {
     expect(packIndices([0, 1, 2, 3, 3, 2, 1, 0]), [0x1b, 0xe4]);
     expect(() => packIndices([4, 0, 0, 0]), throwsArgumentError);
   });
-  test('Bayer matrices contain each threshold exactly once', () {
-    for (final n in [4, 8]) {
-      final all = bayerMatrix(n).expand((r) => r).toList()..sort();
-      expect(all, List.generate(n * n, (i) => i));
-    }
-  });
   for (final mode in DitherMode.values) {
     test(
       '${mode.name}: exact palette preserved; PNG and packed frame agree',
@@ -114,7 +108,7 @@ void main() {
         height: 16,
       ),
     );
-    for (final mode in DitherMode.values.where((m)=>m!=DitherMode.none)) {
+    for (final mode in DitherMode.values.where((m) => m != DitherMode.none)) {
       final out = processImage(
         ProcessRequest(bytes, ImageSettings(mode: mode), width: 32, height: 16),
       );

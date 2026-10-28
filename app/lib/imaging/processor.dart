@@ -10,14 +10,8 @@ enum DitherMode {
   blueNoise('蓝噪声 · 色彩覆盖', '线性光混色，减少规则纹理与误差串色'),
   none('直接量化', '清晰文字与色块，保留干净边缘'),
   floyd('Floyd–Steinberg', '均衡细节与层次，适合大多数照片'),
-  atkinson('Atkinson', '轻盈颗粒与鲜明对比，适合插画'),
-  jjn('Jarvis–Judice–Ninke', '大范围扩散，柔和呈现渐变'),
   stucki('Stucki', '平滑层次，同时保留较多细节'),
-  burkes('Burkes', '柔和且高效，适合人像与风景'),
-  sierra('Sierra', '细腻均匀的误差扩散'),
-  sierraLite('Sierra Lite', '轻量扩散，适合线条与图标'),
-  bayer4('Bayer 4×4', '规则网点，带有复古印刷质感'),
-  bayer8('Bayer 8×8', '更细的有序网点与稳定纹理');
+  burkes('Burkes', '柔和且高效，适合人像与风景');
 
   final String label, description;
   const DitherMode(this.label, this.description);
@@ -95,9 +89,17 @@ class ImageSettings {
       return v is num && v.isFinite ? v.toDouble().clamp(lo, hi) : fallback;
     }
 
+    // Migrate discontinued preferences without keeping dead algorithm paths.
+    final modeName = switch (json['mode']) {
+      'atkinson' => 'burkes',
+      'jjn' || 'sierra' => 'stucki',
+      'sierraLite' => 'floyd',
+      'bayer4' || 'bayer8' => 'blueNoise',
+      final name => name,
+    };
     return ImageSettings(
       mode:
-          DitherMode.values.where((m) => m.name == json['mode']).firstOrNull ??
+          DitherMode.values.where((m) => m.name == modeName).firstOrNull ??
           DitherMode.perceptual,
       brightness: value('brightness', 0, -.3, .3),
       contrast: value('contrast', 1, .5, 1.8),
@@ -151,35 +153,13 @@ const palette = <List<double>>[
   [1, 0, 0],
 ];
 // dx,dy,numerator. Error is distributed in RGB; the nearest palette entry can
-// be selected in OKLab. Atkinson intentionally propagates only 6/8 of error.
+// be selected in OKLab. Three retained diffusion kernels use full error weight.
 const _kernels = <DitherMode, List<List<int>>>{
   DitherMode.floyd: [
     [1, 0, 7],
     [-1, 1, 3],
     [0, 1, 5],
     [1, 1, 1],
-  ],
-  DitherMode.atkinson: [
-    [1, 0, 1],
-    [2, 0, 1],
-    [-1, 1, 1],
-    [0, 1, 1],
-    [1, 1, 1],
-    [0, 2, 1],
-  ],
-  DitherMode.jjn: [
-    [1, 0, 7],
-    [2, 0, 5],
-    [-2, 1, 3],
-    [-1, 1, 5],
-    [0, 1, 7],
-    [1, 1, 5],
-    [2, 1, 3],
-    [-2, 2, 1],
-    [-1, 2, 3],
-    [0, 2, 5],
-    [1, 2, 3],
-    [2, 2, 1],
   ],
   DitherMode.stucki: [
     [1, 0, 8],
@@ -204,32 +184,11 @@ const _kernels = <DitherMode, List<List<int>>>{
     [1, 1, 4],
     [2, 1, 2],
   ],
-  DitherMode.sierra: [
-    [1, 0, 5],
-    [2, 0, 3],
-    [-2, 1, 2],
-    [-1, 1, 4],
-    [0, 1, 5],
-    [1, 1, 4],
-    [2, 1, 2],
-    [-1, 2, 2],
-    [0, 2, 3],
-    [1, 2, 2],
-  ],
-  DitherMode.sierraLite: [
-    [1, 0, 2],
-    [-1, 1, 1],
-    [0, 1, 1],
-  ],
 };
 const _divisors = <DitherMode, int>{
   DitherMode.floyd: 16,
-  DitherMode.atkinson: 8,
-  DitherMode.jjn: 48,
   DitherMode.stucki: 42,
   DitherMode.burkes: 32,
-  DitherMode.sierra: 32,
-  DitherMode.sierraLite: 4,
 };
 
 double _linear(double c) =>
@@ -273,27 +232,6 @@ int nearestColor(double r, double g, double b, bool perceptual) {
     }
   }
   return index;
-}
-
-List<List<int>> bayerMatrix(int size) {
-  var matrix = <List<int>>[
-    [0],
-  ];
-  while (matrix.length < size) {
-    final n = matrix.length;
-    final next = List.generate(n * 2, (_) => List.filled(n * 2, 0));
-    for (var y = 0; y < n; y++) {
-      for (var x = 0; x < n; x++) {
-        final v = matrix[y][x] * 4;
-        next[y][x] = v;
-        next[y][x + n] = v + 2;
-        next[y + n][x] = v + 3;
-        next[y + n][x + n] = v + 1;
-      }
-    }
-    matrix = next;
-  }
-  return matrix;
 }
 
 Uint8List packIndices(List<int> pixels) {
@@ -420,28 +358,13 @@ ProcessedImage processImage(ProcessRequest request) {
   }
   final kernel = _kernels[s.mode];
   final divisor = (_divisors[s.mode] ?? 1).toDouble();
-  final ordered = s.mode == DitherMode.bayer4 || s.mode == DitherMode.bayer8;
-  final matrix = bayerMatrix(s.mode == DitherMode.bayer8 ? 8 : 4);
   for (var y = 0; y < h; y++) {
     final reverse = s.serpentine && y.isOdd && kernel != null;
     for (var step = 0; step < w; step++) {
       final x = reverse ? w - 1 - step : step, at = (y * w + x) * 3;
-      final threshold = ordered
-          ? ((matrix[y % matrix.length][x % matrix.length] + .5) /
-                        (matrix.length * matrix.length) -
-                    .5) *
-                .6 *
-                s.strength
-          : 0.0;
-      double adjusted(double v) {
-        // Taper ordered noise at gamut corners, preserving exact BWYR pixels.
-        final noise = threshold * 4 * v.clamp(0, 1) * (1 - v.clamp(0, 1));
-        return (v + noise).clamp(0.0, 1.0);
-      }
-
-      final r = adjusted(rgb[at]),
-          g = adjusted(rgb[at + 1]),
-          b = adjusted(rgb[at + 2]);
+      final r = rgb[at].clamp(0.0, 1.0),
+          g = rgb[at + 1].clamp(0.0, 1.0),
+          b = rgb[at + 2].clamp(0.0, 1.0);
       final index = nearestColor(r, g, b, s.perceptual);
       final color = palette[index];
       indices[y * w + x] = index;

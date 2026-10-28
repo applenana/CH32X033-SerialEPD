@@ -2,6 +2,8 @@
 
 核对日期：2026-10-28。
 
+应用图像算法来源见 [图像重建研究](image-reconstruction.md)，本块面板的多级灰度核查见 [面板灰度能力](panel-grayscale.md)。本地学习开发保留来源记录，便于继续研究。
+
 ## MoInk
 
 - [atunverse/moink](https://github.com/atunverse/moink)：用户指定的华为 768×552 黑白黄红拆机屏参考项目。

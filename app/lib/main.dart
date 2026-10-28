@@ -267,7 +267,7 @@ class _StudioPageState extends State<StudioPage> {
           onPressed: () => showAboutDialog(
             context: context,
             applicationName: '墨屿 · Ink Studio',
-            applicationVersion: '0.2.0',
+            applicationVersion: '0.3.0',
             children: const [
               Text(
                 '面向黑 / 白 / 黄 / 红电子纸的离线图像工作台。\nSEP/1 · Windows 串口与 Android USB OTG。',
@@ -631,7 +631,7 @@ class _StudioPageState extends State<StudioPage> {
           children: [
             Expanded(child: _preset('照片', DitherMode.perceptual)),
             const SizedBox(width: 5),
-            Expanded(child: _preset('插画', DitherMode.atkinson)),
+            Expanded(child: _preset('插画', DitherMode.burkes)),
             const SizedBox(width: 5),
             Expanded(child: _preset('文字', DitherMode.none)),
           ],
@@ -795,7 +795,7 @@ class _StudioPageState extends State<StudioPage> {
         ),
         const SizedBox(height: 12),
         const Text(
-          '预览使用标准四色，实体屏颜色会受光线与面板批次影响。',
+          '原生黑白黄红四色；灰阶由网点混色呈现。实体颜色受光线与面板批次影响。',
           style: TextStyle(fontSize: 10, color: muted, height: 1.6),
         ),
         TextButton(
