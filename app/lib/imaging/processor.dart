@@ -403,18 +403,27 @@ ProcessedImage processPrepared(
         .2126 * prepared.rgb[at] +
         .7152 * prepared.rgb[at + 1] +
         .0722 * prepared.rgb[at + 2];
+    final linear = <double>[];
     for (var c = 0; c < 3; c++) {
       var v = l + (prepared.rgb[at + c] - l) * s.saturation;
       v = ((v - .5) * s.contrast + .5 + s.brightness).clamp(0, 1);
       v = math.pow(v, 1 / s.gamma).toDouble();
-      if (s.dynamicRange > 0) {
-        // Compress in linear light, then encode again for the reconstruction
-        // boundary. This makes the control affect actual coverage ratios.
-        final factor = 1 - .62 * s.dynamicRange.clamp(0.0, 1.0);
-        final linear = .5 + (linearLight(v) - .5) * factor;
-        v = _encodeLinear(linear.clamp(0.0, 1.0));
+      linear.add(linearLight(v));
+    }
+    if (s.dynamicRange > 0) {
+      // Shadow lift + highlight roll-off around the original luminance. This
+      // preserves midtones and hue instead of flattening every RGB channel.
+      final y = .2126 * linear[0] + .7152 * linear[1] + .0722 * linear[2];
+      final amount = s.dynamicRange.clamp(0.0, 1.0);
+      final targetY = (y + amount * .9 * y * (1 - y) * (1 - 2 * y))
+          .clamp(0.0, 1.0);
+      final scale = y < 1e-5 ? 1.0 : (targetY / y).clamp(.65, 1.25);
+      for (var c = 0; c < 3; c++) {
+        linear[c] = (targetY + (linear[c] - y) * scale).clamp(0.0, 1.0);
       }
-      rgb[at + c] = v.clamp(0.0, 1.0);
+    }
+    for (var c = 0; c < 3; c++) {
+      rgb[at + c] = _encodeLinear(linear[c]).clamp(0.0, 1.0);
     }
   }
   // A zero setting takes the original path without round-trip color changes.

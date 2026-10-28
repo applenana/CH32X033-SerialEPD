@@ -114,7 +114,7 @@ Float64List _correlate(Float64List input, int w, int h, _Kernel k) {
 }
 
 
-List<double> paletteCoverage(List<double> point, List<List<double>> inks) {
+List<double> _solvePaletteWeights(List<double> point, List<List<double>> inks) {
   final a = List.generate(4, (row) => [
     for (var col = 0; col < 4; col++) row == 3 ? 1.0 : inks[col][row],
   ]);
@@ -124,9 +124,7 @@ List<double> paletteCoverage(List<double> point, List<List<double>> inks) {
     for (var row = col + 1; row < 4; row++) {
       if (a[row][col].abs() > a[pivot][col].abs()) pivot = row;
     }
-    if (a[pivot][col].abs() < 1e-8) {
-      return coverage(point[0], point[1], point[2]);
-    }
+    if (a[pivot][col].abs() < 1e-8) return const [1, 0, 0, 0];
     final tmp = a[col]; a[col] = a[pivot]; a[pivot] = tmp;
     final bv = b[col]; b[col] = b[pivot]; b[pivot] = bv;
     final div = a[col][col];
@@ -143,7 +141,13 @@ List<double> paletteCoverage(List<double> point, List<List<double>> inks) {
       b[row] -= f * b[col];
     }
   }
-  final weights = b.map((v) => math.max(0, v)).toList();
+  return b;
+}
+
+List<double> paletteCoverage(List<double> point, List<List<double>> inks) {
+  final weights = _solvePaletteWeights(point, inks)
+      .map((v) => math.max(0, v))
+      .toList();
   final sum = weights.fold(0.0, (a, b) => a + b);
   if (sum <= 1e-8) return [1, 0, 0, 0];
   return weights.map((v) => v / sum).toList();
@@ -151,11 +155,20 @@ List<double> paletteCoverage(List<double> point, List<List<double>> inks) {
 
 List<double> projectToPalette(double r, double g, double b,
     List<List<double>> inks, double compression) {
-  final p = [r, g, b];
-  if (compression > 0) {
-    final factor = 1 - .42 * compression.clamp(0.0, 1.0);
+  final original = [r, g, b];
+  final y = .2126 * r + .7152 * g + .0722 * b;
+  final neutral = [y, y, y];
+  final amount = compression.clamp(0.0, 1.0);
+  final raw = _solvePaletteWeights(original, inks);
+  final outside = raw.any((v) => v < -1e-6);
+  final p = [...original];
+  if (outside && amount > 0) {
+    // Compress only out-of-gamut chroma toward a same-luminance neutral.
+    // In-gamut colors remain unchanged, while blue/cyan avoids a forced
+    // red/yellow cast. The final projection still uses the measured simplex.
+    final factor = .9 * amount;
     for (var i = 0; i < 3; i++) {
-      p[i] = .5 + (p[i] - .5) * factor;
+      p[i] = original[i] * (1 - factor) + neutral[i] * factor;
     }
   }
   final weights = paletteCoverage(p, inks);
