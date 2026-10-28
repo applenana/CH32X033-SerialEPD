@@ -267,7 +267,7 @@ class _StudioPageState extends State<StudioPage> {
           onPressed: () => showAboutDialog(
             context: context,
             applicationName: '墨屿 · Ink Studio',
-            applicationVersion: '0.3.3',
+            applicationVersion: '0.3.4',
             children: const [
               Text(
                 '面向黑 / 白 / 黄 / 红电子纸的离线图像工作台。\nSEP/1 · Windows 串口与 Android USB OTG。',
@@ -706,6 +706,29 @@ class _StudioPageState extends State<StudioPage> {
             (v) => c.settings.copyWith(paperWhite: v),
           ),
         _slider(
+          '颜色诱导 · 实验',
+          c.settings.colorInduction,
+          0,
+          1,
+          (v) => c.settings.copyWith(colorInduction: v),
+        ),
+        if (c.settings.colorInduction > 0)
+          _slider(
+            '诱导范围（像素）',
+            c.settings.inductionRadius.toDouble(),
+            2,
+            24,
+            (v) => c.settings.copyWith(inductionRadius: v.round()),
+            divisions: 22,
+          ),
+        const Padding(
+          padding: EdgeInsets.only(bottom: 14),
+          child: Text(
+            '0 为关闭。在蓝／青区域内沿边缘加入暖黄对比，尝试让灰色显冷；可能出现黄边，不会增加真实蓝色。',
+            style: TextStyle(fontSize: 10, color: muted, height: 1.6),
+          ),
+        ),
+        _slider(
           '亮度',
           c.settings.brightness,
           -.3,
@@ -853,15 +876,18 @@ class _StudioPageState extends State<StudioPage> {
     double value,
     double min,
     double max,
-    ImageSettings Function(double) update,
-  ) => Column(
+    ImageSettings Function(double) update, {
+    int? divisions,
+  }) => Column(
     children: [
       Row(
         children: [
           Text(name, style: const TextStyle(fontSize: 12)),
           const Spacer(),
           Text(
-            value.toStringAsFixed(2),
+            divisions == null
+                ? value.toStringAsFixed(2)
+                : value.round().toString(),
             style: const TextStyle(fontSize: 11, color: muted),
           ),
         ],
@@ -870,6 +896,7 @@ class _StudioPageState extends State<StudioPage> {
         value: value,
         min: min,
         max: max,
+        divisions: divisions,
         onChanged: (v) => c.updateSettings(update(v)),
       ),
     ],

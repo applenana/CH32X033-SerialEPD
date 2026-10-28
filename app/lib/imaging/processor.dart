@@ -5,6 +5,7 @@ import '../protocol/codec.dart';
 import 'geometry.dart';
 import 'reconstruction.dart';
 import 'color_mapping.dart';
+import 'color_induction.dart';
 
 enum DitherMode {
   perceptual('感知重建 · DBS', '优化观看尺度下的颜色与网点，计算较慢'),
@@ -27,8 +28,9 @@ class ImageSettings {
       strength,
       softness,
       naturalMapping,
+      colorInduction,
       paperWhite;
-  final int rotation;
+  final int rotation, inductionRadius;
   final bool cover, perceptual, serpentine;
   const ImageSettings({
     this.mode = DitherMode.perceptual,
@@ -43,6 +45,8 @@ class ImageSettings {
     this.serpentine = true,
     this.softness = .5,
     this.naturalMapping = .65,
+    this.colorInduction = 0,
+    this.inductionRadius = 8,
     this.paperWhite = .07,
   });
   ImageSettings copyWith({
@@ -58,6 +62,8 @@ class ImageSettings {
     bool? serpentine,
     double? softness,
     double? naturalMapping,
+    double? colorInduction,
+    int? inductionRadius,
     double? paperWhite,
   }) => ImageSettings(
     mode: mode ?? this.mode,
@@ -72,6 +78,8 @@ class ImageSettings {
     serpentine: serpentine ?? this.serpentine,
     softness: softness ?? this.softness,
     naturalMapping: naturalMapping ?? this.naturalMapping,
+    colorInduction: colorInduction ?? this.colorInduction,
+    inductionRadius: inductionRadius ?? this.inductionRadius,
     paperWhite: paperWhite ?? this.paperWhite,
   );
   Map<String, dynamic> toJson() => {
@@ -87,6 +95,8 @@ class ImageSettings {
     'serpentine': serpentine,
     'softness': softness,
     'naturalMapping': naturalMapping,
+    'colorInduction': colorInduction,
+    'inductionRadius': inductionRadius,
     'paperWhite': paperWhite,
   };
   factory ImageSettings.fromJson(Map<String, dynamic> json) {
@@ -118,6 +128,8 @@ class ImageSettings {
       serpentine: json['serpentine'] != false,
       softness: value('softness', .5, 0, 1),
       naturalMapping: value('naturalMapping', .65, 0, 1),
+      colorInduction: value('colorInduction', 0, 0, 1),
+      inductionRadius: value('inductionRadius', 8, 2, 24).round(),
       paperWhite: value('paperWhite', .07, 0, .15),
     );
   }
@@ -341,9 +353,15 @@ ProcessedImage processImage(ProcessRequest request) {
     }
   }
   // A zero setting takes the original path without round-trip color changes.
-  final natural = s.naturalMapping > 0
+  final induction = s.colorInduction > 0
+      ? prepareColorInduction(rgb, w, h, s.inductionRadius)
+      : null;
+  var natural = s.naturalMapping > 0
       ? applyNaturalMapping(rgb, s.naturalMapping)
       : null;
+  if (induction != null) {
+    natural = applyColorInduction(rgb, induction, s.colorInduction, natural);
+  }
   final indices = Uint8List(w * h), counts = List.filled(4, 0);
   final output = img.Image(width: w, height: h, numChannels: 3);
   if (s.mode == DitherMode.perceptual || s.mode == DitherMode.blueNoise) {
