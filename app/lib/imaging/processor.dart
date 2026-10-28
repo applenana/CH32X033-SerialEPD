@@ -182,7 +182,9 @@ const palette = <List<double>>[
 ];
 
 List<List<double>> effectivePalette(ImageSettings s) =>
-    s.calibration.enabled && s.calibration.valid ? s.calibration.colors : palette;
+    s.calibration.enabled && s.calibration.valid
+    ? s.calibration.colors
+    : palette;
 
 // dx,dy,numerator. Error is distributed in RGB; the nearest palette entry can
 // be selected in OKLab. Three retained diffusion kernels use full error weight.
@@ -246,7 +248,6 @@ List<double> _oklab(double r, double g, double b) {
     .0259040371 * l + .7827717662 * m - .808675766 * s,
   ];
 }
-
 
 int nearestColor(
   double r,
@@ -415,9 +416,14 @@ ProcessedImage processPrepared(
       // preserves midtones and hue instead of flattening every RGB channel.
       final y = .2126 * linear[0] + .7152 * linear[1] + .0722 * linear[2];
       final amount = s.dynamicRange.clamp(0.0, 1.0);
-      final targetY = (y + amount * .9 * y * (1 - y) * (1 - 2 * y))
-          .clamp(0.0, 1.0);
-      final scale = y < 1e-5 ? 1.0 : (targetY / y).clamp(.65, 1.25);
+      final tone = math.sqrt(y);
+      final mappedTone =
+          tone + amount * .6 * tone * (1 - tone) * (1 - 2 * tone);
+      final targetY = mappedTone * mappedTone;
+      var scale = y < 1e-10 ? 1.0 : targetY / y;
+      for (final channel in linear) {
+        if (channel > y) scale = math.min(scale, (1 - targetY) / (channel - y));
+      }
       for (var c = 0; c < 3; c++) {
         linear[c] = (targetY + (linear[c] - y) * scale).clamp(0.0, 1.0);
       }
@@ -440,9 +446,8 @@ ProcessedImage processPrepared(
       optimize: s.mode == DitherMode.perceptual,
       softness: s.softness,
       paperWhite: s.paperWhite,
-      inks: inks
-          .map((c) => [linearLight(c[0]), linearLight(c[1]), linearLight(c[2])])
-          .toList(),
+      // reconstruct performs the single sRGB -> linear conversion.
+      inks: inks,
       gamutCompression: s.gamutCompression,
     );
     for (var i = 0; i < w * h; i++) {

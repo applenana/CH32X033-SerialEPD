@@ -113,11 +113,13 @@ Float64List _correlate(Float64List input, int w, int h, _Kernel k) {
   return out;
 }
 
-
 List<double> _solvePaletteWeights(List<double> point, List<List<double>> inks) {
-  final a = List.generate(4, (row) => [
-    for (var col = 0; col < 4; col++) row == 3 ? 1.0 : inks[col][row],
-  ]);
+  final a = List.generate(
+    4,
+    (row) => [
+      for (var col = 0; col < 4; col++) row == 3 ? 1.0 : inks[col][row],
+    ],
+  );
   final b = [...point, 1.0];
   for (var col = 0; col < 4; col++) {
     var pivot = col;
@@ -125,8 +127,12 @@ List<double> _solvePaletteWeights(List<double> point, List<List<double>> inks) {
       if (a[row][col].abs() > a[pivot][col].abs()) pivot = row;
     }
     if (a[pivot][col].abs() < 1e-8) return const [1, 0, 0, 0];
-    final tmp = a[col]; a[col] = a[pivot]; a[pivot] = tmp;
-    final bv = b[col]; b[col] = b[pivot]; b[pivot] = bv;
+    final tmp = a[col];
+    a[col] = a[pivot];
+    a[pivot] = tmp;
+    final bv = b[col];
+    b[col] = b[pivot];
+    b[pivot] = bv;
     final div = a[col][col];
     for (var j = col; j < 4; j++) {
       a[col][j] /= div;
@@ -145,36 +151,75 @@ List<double> _solvePaletteWeights(List<double> point, List<List<double>> inks) {
 }
 
 List<double> paletteCoverage(List<double> point, List<List<double>> inks) {
-  final weights = _solvePaletteWeights(point, inks)
-      .map((v) => math.max(0, v))
-      .toList();
+  final weights = _solvePaletteWeights(
+    point,
+    inks,
+  ).map((v) => math.max(0, v)).toList();
   final sum = weights.fold(0.0, (a, b) => a + b);
   if (sum <= 1e-8) return [1, 0, 0, 0];
   return weights.map((v) => v / sum).toList();
 }
 
-List<double> projectToPalette(double r, double g, double b,
-    List<List<double>> inks, double compression) {
+double _luminance(List<double> c) => .2126 * c[0] + .7152 * c[1] + .0722 * c[2];
+
+/// Map in linear light. Compression interpolates toward a hue ray clipped at
+/// the measured simplex boundary, with a constant attainable luminance.
+List<double> projectToPalette(
+  double r,
+  double g,
+  double b,
+  List<List<double>> inks,
+  double compression,
+) {
   final original = [r, g, b];
-  final y = .2126 * r + .7152 * g + .0722 * b;
-  final neutral = [y, y, y];
-  final amount = compression.clamp(0.0, 1.0);
   final raw = _solvePaletteWeights(original, inks);
-  final outside = raw.any((v) => v < -1e-6);
-  final p = [...original];
-  if (outside && amount > 0) {
-    // Compress only out-of-gamut chroma toward a same-luminance neutral.
-    // In-gamut colors remain unchanged, while blue/cyan avoids a forced
-    // red/yellow cast. The final projection still uses the measured simplex.
-    final factor = .9 * amount;
-    for (var i = 0; i < 3; i++) {
-      p[i] = original[i] * (1 - factor) + neutral[i] * factor;
+  if (raw.every((v) => v >= -1e-10)) return original;
+  final levels = inks.map(_luminance).toList();
+  var low = 0, high = 0;
+  for (var i = 1; i < 4; i++) {
+    if (levels[i] < levels[low]) low = i;
+    if (levels[i] > levels[high]) high = i;
+  }
+  final y = _luminance(original).clamp(levels[low], levels[high]);
+  final weights = paletteCoverage(original, inks);
+  final currentY = List.generate(
+    4,
+    (i) => weights[i] * levels[i],
+  ).reduce((a, b) => a + b);
+  // Correct the clipped projection by a convex mixture, never RGB clipping.
+  final end = currentY < y ? high : low;
+  final delta = levels[end] - currentY;
+  final correction = delta.abs() < 1e-12
+      ? 0.0
+      : ((y - currentY) / delta).clamp(0.0, 1.0);
+  for (var i = 0; i < 4; i++) {
+    weights[i] = weights[i] * (1 - correction) + (i == end ? correction : 0);
+  }
+  final span = levels[high] - levels[low];
+  final white = span < 1e-12 ? 0.0 : (y - levels[low]) / span;
+  final anchor = List.filled(4, 0.0);
+  anchor[low] = 1 - white;
+  anchor[high] += white;
+  // The line from the panel neutral axis to the source hits a face when a
+  // barycentric weight becomes zero. No arbitrary 90% desaturation factor.
+  var extent = 1.0;
+  for (var i = 0; i < 4; i++) {
+    if (raw[i] < 0) extent = math.min(extent, anchor[i] / (anchor[i] - raw[i]));
+  }
+  final amount = compression.clamp(0.0, 1.0);
+  // For unreachable luminance use the attainable endpoint, not the raw ray.
+  if ((_luminance(original) - y).abs() < 1e-10) {
+    for (var i = 0; i < 4; i++) {
+      final ray = anchor[i] + extent * (raw[i] - anchor[i]);
+      weights[i] = weights[i] * (1 - amount) + ray * amount;
     }
   }
-  final weights = paletteCoverage(p, inks);
-  return [for (var c = 0; c < 3; c++)
-    List.generate(4, (i) => weights[i] * inks[i][c]).fold(0.0, (a, b) => a + b)];
+  return [
+    for (var c = 0; c < 3; c++)
+      List.generate(4, (i) => weights[i] * inks[i][c]).reduce((a, b) => a + b),
+  ];
 }
+
 /// Soft photo reproduction: gamut-map first, sample a spatial blue-noise rank
 /// distribution, optionally minimize a visual error by neighbor swaps.
 /// Swaps preserve the initial ink coverage, avoiding unconstrained DBS tone
@@ -224,13 +269,7 @@ Reconstruction reconstruct(
       target.setRange(i * 3, i * 3 + 3, inkOpponent[exact]);
       continue;
     }
-    final mapped = projectToPalette(
-      lr,
-      lg,
-      lb,
-      inkLinear,
-      gamutCompression,
-    );
+    final mapped = projectToPalette(lr, lg, lb, inkLinear, gamutCompression);
     final weights = paletteCoverage(mapped, inkLinear);
     for (var j = 0; j < 4; j++) {
       if (weights[j] > 1e-7) allowed[i] |= 1 << j;
@@ -264,7 +303,8 @@ Reconstruction reconstruct(
   final error = List.generate(
     3,
     (ch) => Float64List.fromList([
-      for (var i = 0; i < n; i++) inkOpponent[indices[i]][ch] - target[i * 3 + ch],
+      for (var i = 0; i < n; i++)
+        inkOpponent[indices[i]][ch] - target[i * 3 + ch],
     ]),
   );
   final corr = List.generate(3, (ch) => _correlate(error[ch], w, h, ks[ch]));
@@ -278,7 +318,10 @@ Reconstruction reconstruct(
   final deltas = [
     for (var old = 0; old < 4; old++)
       for (var next = 0; next < 4; next++)
-        [for (var ch = 0; ch < 3; ch++) inkOpponent[next][ch] - inkOpponent[old][ch]],
+        [
+          for (var ch = 0; ch < 3; ch++)
+            inkOpponent[next][ch] - inkOpponent[old][ch],
+        ],
   ];
   final self = ks.map((k) => k.at(0, 0)).toList();
   const neighbors = [
