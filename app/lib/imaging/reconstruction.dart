@@ -113,6 +113,55 @@ Float64List _correlate(Float64List input, int w, int h, _Kernel k) {
   return out;
 }
 
+
+List<double> paletteCoverage(List<double> point, List<List<double>> inks) {
+  final a = List.generate(4, (row) => [
+    for (var col = 0; col < 4; col++) row == 3 ? 1.0 : inks[col][row],
+  ]);
+  final b = [...point, 1.0];
+  for (var col = 0; col < 4; col++) {
+    var pivot = col;
+    for (var row = col + 1; row < 4; row++) {
+      if (a[row][col].abs() > a[pivot][col].abs()) pivot = row;
+    }
+    if (a[pivot][col].abs() < 1e-8) {
+      return coverage(point[0], point[1], point[2]);
+    }
+    final tmp = a[col]; a[col] = a[pivot]; a[pivot] = tmp;
+    final bv = b[col]; b[col] = b[pivot]; b[pivot] = bv;
+    final div = a[col][col];
+    for (var j = col; j < 4; j++) {
+      a[col][j] /= div;
+    }
+    b[col] /= div;
+    for (var row = 0; row < 4; row++) {
+      if (row == col) continue;
+      final f = a[row][col];
+      for (var j = col; j < 4; j++) {
+        a[row][j] -= f * a[col][j];
+      }
+      b[row] -= f * b[col];
+    }
+  }
+  final weights = b.map((v) => math.max(0, v)).toList();
+  final sum = weights.fold(0.0, (a, b) => a + b);
+  if (sum <= 1e-8) return [1, 0, 0, 0];
+  return weights.map((v) => v / sum).toList();
+}
+
+List<double> projectToPalette(double r, double g, double b,
+    List<List<double>> inks, double compression) {
+  final p = [r, g, b];
+  if (compression > 0) {
+    final factor = 1 - .42 * compression.clamp(0.0, 1.0);
+    for (var i = 0; i < 3; i++) {
+      p[i] = .5 + (p[i] - .5) * factor;
+    }
+  }
+  final weights = paletteCoverage(p, inks);
+  return [for (var c = 0; c < 3; c++)
+    List.generate(4, (i) => weights[i] * inks[i][c]).fold(0.0, (a, b) => a + b)];
+}
 /// Soft photo reproduction: gamut-map first, sample a spatial blue-noise rank
 /// distribution, optionally minimize a visual error by neighbor swaps.
 /// Swaps preserve the initial ink coverage, avoiding unconstrained DBS tone
@@ -125,22 +174,28 @@ Reconstruction reconstruct(
   double softness = 1,
   double paperWhite = 0,
   int maxPasses = 3,
+  List<List<double>> inks = _inks,
+  double dynamicRange = 0,
+  double gamutCompression = 0,
 }) {
   final n = w * h,
       indices = Uint8List(n),
       pinned = Uint8List(n),
       allowed = Uint8List(n),
       target = Float64List(n * 3);
-  final inks = _inks.map((v) => opponent(v[0], v[1], v[2])).toList();
-  final lut = [for (var i = 0; i <= 4096; i++) linearLight(i / 4096)];
+  final inkLinear = inks
+      .map((v) => [linearLight(v[0]), linearLight(v[1]), linearLight(v[2])])
+      .toList();
+  final inkOpponent = inkLinear.map((v) => opponent(v[0], v[1], v[2])).toList();
   for (var i = 0; i < n; i++) {
     final r = rgb[i * 3].clamp(0.0, 1.0),
         g = rgb[i * 3 + 1].clamp(0.0, 1.0),
         b = rgb[i * 3 + 2].clamp(0.0, 1.0);
+    final lr = linearLight(r), lg = linearLight(g), lb = linearLight(b);
     var exact = -1;
     for (var j = 0; j < 4; j++) {
-      final c = _inks[j];
-      if ((r - c[0]).abs() + (g - c[1]).abs() + (b - c[2]).abs() < .00001) {
+      final c = inkLinear[j];
+      if ((lr - c[0]).abs() + (lg - c[1]).abs() + (lb - c[2]).abs() < .00001) {
         exact = j;
         break;
       }
@@ -153,20 +208,17 @@ Reconstruction reconstruct(
     if (exact >= 0) {
       indices[i] = exact;
       pinned[i] = 1;
-      target.setRange(i * 3, i * 3 + 3, inks[exact]);
+      target.setRange(i * 3, i * 3 + 3, inkOpponent[exact]);
       continue;
     }
-    final mapped = projectGamut(
-      lut[(r * 4096).round()],
-      lut[(g * 4096).round()],
-      lut[(b * 4096).round()],
+    final mapped = projectToPalette(
+      lr,
+      lg,
+      lb,
+      inkLinear,
+      gamutCompression,
     );
-    final weights = [
-      1 - mapped[0],
-      mapped[2],
-      mapped[1] - mapped[2],
-      mapped[0] - mapped[1],
-    ];
+    final weights = paletteCoverage(mapped, inkLinear);
     for (var j = 0; j < 4; j++) {
       if (weights[j] > 1e-7) allowed[i] |= 1 << j;
     }
@@ -199,7 +251,7 @@ Reconstruction reconstruct(
   final error = List.generate(
     3,
     (ch) => Float64List.fromList([
-      for (var i = 0; i < n; i++) inks[indices[i]][ch] - target[i * 3 + ch],
+      for (var i = 0; i < n; i++) inkOpponent[indices[i]][ch] - target[i * 3 + ch],
     ]),
   );
   final corr = List.generate(3, (ch) => _correlate(error[ch], w, h, ks[ch]));
@@ -213,7 +265,7 @@ Reconstruction reconstruct(
   final deltas = [
     for (var old = 0; old < 4; old++)
       for (var next = 0; next < 4; next++)
-        [for (var ch = 0; ch < 3; ch++) inks[next][ch] - inks[old][ch]],
+        [for (var ch = 0; ch < 3; ch++) inkOpponent[next][ch] - inkOpponent[old][ch]],
   ];
   final self = ks.map((k) => k.at(0, 0)).toList();
   const neighbors = [

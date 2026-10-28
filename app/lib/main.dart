@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'imaging/processor.dart';
+import 'imaging/palette_calibration.dart';
 import 'studio_controller.dart';
 import 'imaging/geometry.dart';
 import 'widgets/crop_editor.dart';
@@ -84,6 +85,66 @@ class StudioPage extends StatefulWidget {
 class _StudioPageState extends State<StudioPage> {
   late final StudioController c;
   bool _openingEditor = false;
+
+  Future<void> _editPalette() async {
+    final current = c.settings.calibration;
+    final values = current.colors
+        .expand((row) => row.map((v) => (v * 255).round().toString()))
+        .map((v) => TextEditingController(text: v))
+        .toList();
+    final result = await showDialog<PaletteCalibration>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('实测色板 RGB'),
+        content: StatefulBuilder(
+          builder: (context, setState) => SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('输入统一拍摄条件下的黑、白、黄、红中心区域 RGB（0–255）。', style: TextStyle(fontSize: 11)),
+                const SizedBox(height: 12),
+                for (var row = 0; row < 4; row++) Row(
+                  children: [
+                    SizedBox(width: 34, child: Text(['黑', '白', '黄', '红'][row])),
+                    for (var col = 0; col < 3; col++) Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: TextField(
+                          controller: values[row * 3 + col],
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(labelText: ['R', 'G', 'B'][col]),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('取消')),
+          TextButton(
+            onPressed: () {
+              final rgb = values.map((v) => int.tryParse(v.text.trim()) ?? -1).toList();
+              if (rgb.any((v) => v < 0 || v > 255)) return;
+              Navigator.pop(dialogContext, PaletteCalibration.fromRgb8(
+                black: rgb.sublist(0, 3), white: rgb.sublist(3, 6),
+                yellow: rgb.sublist(6, 9), red: rgb.sublist(9, 12),
+              ));
+            },
+            child: const Text('应用'),
+          ),
+        ],
+      ),
+    );
+    for (final value in values) {
+      value.dispose();
+    }
+    if (result != null) c.updateCalibration(result);
+  }
   Future<void> _editCrop() async {
     if (_openingEditor) return;
     setState(() => _openingEditor = true);
@@ -851,8 +912,33 @@ class _StudioPageState extends State<StudioPage> {
               c.settings.mode == DitherMode.perceptual ||
               c.settings.mode == DitherMode.blueNoise,
         ),
+        _slider(
+          '动态范围压缩',
+          c.settings.dynamicRange,
+          0,
+          1,
+          (v) => c.settings.copyWith(dynamicRange: v),
+        ),
+        _slider(
+          '色域压缩',
+          c.settings.gamutCompression,
+          0,
+          1,
+          (v) => c.settings.copyWith(gamutCompression: v),
+          enabled: c.settings.calibration.enabled,
+        ),
+        OutlinedButton.icon(
+          onPressed: _editPalette,
+          icon: Icon(c.settings.calibration.enabled ? Icons.colorize : Icons.palette_outlined, size: 17),
+          label: Text(c.settings.calibration.enabled ? '编辑实测色板' : '输入实测色板'),
+        ),
+        if (c.settings.calibration.enabled)
+          TextButton(
+            onPressed: () => c.updateCalibration(PaletteCalibration.ideal),
+            child: const Text('恢复理想色板'),
+          ),
         const Text(
-          '观看柔和度用于 DBS；纸白保护用于 DBS 和蓝噪声。默认 1 / 1 / 0，可随时手动微调。',
+          '实测色板只改变软件映射，不改变 2bpp 协议色号。动态范围压缩用于降低超色域颜色的突兀暖色偏移；默认参数为 0.7。',
           style: TextStyle(fontSize: 10, color: muted, height: 1.6),
         ),
       ],
@@ -1012,3 +1098,4 @@ class _StudioPageState extends State<StudioPage> {
     ),
   );
 }
+

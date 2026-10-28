@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'processor.dart';
-import 'reconstruction.dart' show linearLight, projectGamut;
+import 'reconstruction.dart' show linearLight, projectGamut, projectToPalette;
 
 /// Local heuristic search, not a trained model or a calibrated vision metric.
 /// Each candidate is assessed at panel resolution against ONE fixed original.
@@ -89,6 +89,7 @@ class AutoReference {
   final List<Float32List> target;
   final Float32List luminance, localY, flat;
   final Uint8List neutral, paper;
+  final List<List<double>> paletteColors;
   final double p02, median, p98, nearWhite, colorFraction, inkFraction;
   AutoReference._(
     this.width,
@@ -99,6 +100,7 @@ class AutoReference {
     this.flat,
     this.neutral,
     this.paper,
+    this.paletteColors,
     this.p02,
     this.median,
     this.p98,
@@ -107,8 +109,13 @@ class AutoReference {
     this.inkFraction,
   );
 
-  factory AutoReference(PreparedImage image) {
+  factory AutoReference(PreparedImage image, {List<List<double>> palette = const [
+    [0, 0, 0], [1, 1, 1], [1, 1, 0], [1, 0, 0],
+  ], double gamutCompression = 0, bool useIdealGamut = false}) {
     final w = image.width, h = image.height, n = w * h;
+    final linearPalette = palette
+        .map((c) => [linearLight(c[0]), linearLight(c[1]), linearLight(c[2])])
+        .toList();
     final target = List.generate(3, (_) => Float32List(n));
     final lum = Float32List(n), rawY = Float32List(n), squared = Float32List(n);
     final neutral = Uint8List(n),
@@ -120,7 +127,9 @@ class AutoReference {
           g = image.rgb[3 * i + 1],
           b = image.rgb[3 * i + 2];
       final lr = linearLight(r), lg = linearLight(g), lb = linearLight(b);
-      final mapped = projectGamut(lr, lg, lb);
+      final mapped = useIdealGamut
+          ? projectGamut(lr, lg, lb)
+          : projectToPalette(lr, lg, lb, linearPalette, gamutCompression);
       for (var c = 0; c < 3; c++) {
         target[c][i] = mapped[c];
       }
@@ -168,6 +177,7 @@ class AutoReference {
       flat,
       neutral,
       paper,
+      palette,
       percentile(.02),
       percentile(.5),
       percentile(.98),
@@ -209,7 +219,7 @@ AutoMetrics evaluateAutoPixels(Uint8List indices, AutoReference reference) {
   final y = Float32List(n);
   var bias = 0.0, neutralInk = 0.0, paperNoise = 0.0;
   for (var i = 0; i < n; i++) {
-    final ink = palette[indices[i]];
+    final ink = reference.paletteColors[indices[i]];
     for (var c = 0; c < 3; c++) {
       error[c][i] = ink[c] - reference.target[c][i];
     }
@@ -272,7 +282,14 @@ AutoResult autoTune(
       onProgress?.call(AutoProgress(phase, fraction));
   progress('分析原图：明暗、彩度和细节…', .02);
   final prepared = prepareImage(request);
-  final reference = AutoReference(prepared);
+  final reference = AutoReference(
+    prepared,
+    palette: effectivePalette(request.settings),
+    gamutCompression: request.settings.calibration.enabled
+        ? request.settings.gamutCompression
+        : 0,
+    useIdealGamut: !request.settings.calibration.enabled,
+  );
   // Source is prepared only once, all settings use this same geometry.
   return _search(prepared, reference, request.settings, watch, progress);
 }

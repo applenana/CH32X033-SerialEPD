@@ -2,11 +2,23 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:ink_studio/imaging/reconstruction.dart';
+import 'package:ink_studio/imaging/palette_calibration.dart';
 import 'package:ink_studio/imaging/geometry.dart';
 import 'package:ink_studio/imaging/blue_noise.dart';
 import 'package:ink_studio/imaging/processor.dart';
 
 void main() {
+  test('Measured palette round-trips and rejects degenerate white point', () {
+    final measured = PaletteCalibration.fromRgb8(
+      black: [18, 20, 19], white: [232, 230, 224],
+      yellow: [201, 186, 74], red: [180, 62, 48],
+    );
+    expect(PaletteCalibration.fromJson(measured.toJson()).colors, measured.colors);
+    expect(measured.valid, isTrue);
+    expect(const PaletteCalibration(colors: [
+      [0, 0, 0], [0.01, 0.01, 0.01], [1, 1, 0], [1, 0, 0],
+    ]).valid, isFalse);
+  });
   test('Compact algorithm list and legacy preference migration', () {
     expect(DitherMode.values.map((m) => m.name).toSet(), {
       'none',

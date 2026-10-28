@@ -5,6 +5,7 @@ import '../protocol/codec.dart';
 import 'geometry.dart';
 import 'reconstruction.dart';
 import 'color_mapping.dart';
+import 'palette_calibration.dart';
 
 enum DitherMode {
   perceptual('感知重建 · DBS', '优化观看尺度下的颜色与网点，计算较慢'),
@@ -27,7 +28,10 @@ class ImageSettings {
       strength,
       softness,
       naturalMapping,
-      paperWhite;
+      paperWhite,
+      dynamicRange,
+      gamutCompression;
+  final PaletteCalibration calibration;
   final int rotation;
   final bool cover, perceptual, serpentine;
   const ImageSettings({
@@ -44,6 +48,9 @@ class ImageSettings {
     this.softness = 1,
     this.naturalMapping = 1,
     this.paperWhite = 0,
+    this.calibration = PaletteCalibration.ideal,
+    this.dynamicRange = .7,
+    this.gamutCompression = .7,
   });
   ImageSettings copyWith({
     DitherMode? mode,
@@ -59,6 +66,9 @@ class ImageSettings {
     double? softness,
     double? naturalMapping,
     double? paperWhite,
+    PaletteCalibration? calibration,
+    double? dynamicRange,
+    double? gamutCompression,
   }) => ImageSettings(
     mode: mode ?? this.mode,
     brightness: brightness ?? this.brightness,
@@ -73,6 +83,9 @@ class ImageSettings {
     softness: softness ?? this.softness,
     naturalMapping: naturalMapping ?? this.naturalMapping,
     paperWhite: paperWhite ?? this.paperWhite,
+    calibration: calibration ?? this.calibration,
+    dynamicRange: dynamicRange ?? this.dynamicRange,
+    gamutCompression: gamutCompression ?? this.gamutCompression,
   );
   Map<String, dynamic> toJson() => {
     'defaultsVersion': 1,
@@ -89,6 +102,9 @@ class ImageSettings {
     'softness': softness,
     'naturalMapping': naturalMapping,
     'paperWhite': paperWhite,
+    'calibration': calibration.toJson(),
+    'dynamicRange': dynamicRange,
+    'gamutCompression': gamutCompression,
   };
   factory ImageSettings.fromJson(Map<String, dynamic> json) {
     double value(String key, double fallback, double lo, double hi) {
@@ -121,6 +137,9 @@ class ImageSettings {
       softness: currentDefaults ? value('softness', 1, 0, 1) : 1,
       naturalMapping: currentDefaults ? value('naturalMapping', 1, 0, 1) : 1,
       paperWhite: currentDefaults ? value('paperWhite', 0, 0, .15) : 0,
+      calibration: PaletteCalibration.fromJson(json['calibration']),
+      dynamicRange: value('dynamicRange', .7, 0, 1),
+      gamutCompression: value('gamutCompression', .7, 0, 1),
     );
   }
 }
@@ -161,6 +180,10 @@ const palette = <List<double>>[
   [1, 1, 0],
   [1, 0, 0],
 ];
+
+List<List<double>> effectivePalette(ImageSettings s) =>
+    s.calibration.enabled && s.calibration.valid ? s.calibration.colors : palette;
+
 // dx,dy,numerator. Error is distributed in RGB; the nearest palette entry can
 // be selected in OKLab. Three retained diffusion kernels use full error weight.
 const _kernels = <DitherMode, List<List<int>>>{
@@ -222,7 +245,6 @@ List<double> _oklab(double r, double g, double b) {
   ];
 }
 
-final _labPalette = palette.map((c) => _oklab(c[0], c[1], c[2])).toList();
 
 int nearestColor(
   double r,
@@ -231,13 +253,17 @@ int nearestColor(
   bool perceptual, {
   double chromaPenalty = 0,
   bool monochrome = false,
+  List<List<double>> colors = palette,
+  List<List<double>>? labColors,
 }) {
   final p = perceptual ? _oklab(r, g, b) : [r, g, b];
-  final colors = perceptual ? _labPalette : palette;
+  final metricColors = perceptual
+      ? (labColors ?? colors.map((c) => _oklab(c[0], c[1], c[2])).toList())
+      : colors;
   var best = double.infinity, index = 0;
   for (var i = 0; i < 4; i++) {
     if (monochrome && i >= 2) continue;
-    final c = colors[i];
+    final c = metricColors[i];
     final a = p[0] - c[0], d = p[1] - c[1], e = p[2] - c[2];
     // Penalize chroma twice per axis so neutral gray does not become red merely
     // because the four-entry palette has a large luminance gap.
@@ -367,6 +393,8 @@ ProcessedImage processPrepared(
   final clock = Stopwatch()..start();
   final w = prepared.width, h = prepared.height;
   final rgb = Float32List(prepared.rgb.length);
+  final inks = effectivePalette(s);
+  final labInks = inks.map((c) => _oklab(c[0], c[1], c[2])).toList();
   for (var i = 0; i < w * h; i++) {
     final at = i * 3;
     final l =
@@ -376,6 +404,10 @@ ProcessedImage processPrepared(
     for (var c = 0; c < 3; c++) {
       var v = l + (prepared.rgb[at + c] - l) * s.saturation;
       v = ((v - .5) * s.contrast + .5 + s.brightness).clamp(0, 1);
+      if (s.calibration.enabled && s.dynamicRange > 0) {
+        final factor = 1 - .38 * s.dynamicRange.clamp(0.0, 1.0);
+        v = .5 + (v - .5) * factor;
+      }
       rgb[at + c] = math.pow(v, 1 / s.gamma).toDouble();
     }
   }
@@ -393,9 +425,13 @@ ProcessedImage processPrepared(
       optimize: s.mode == DitherMode.perceptual,
       softness: s.softness,
       paperWhite: s.paperWhite,
+      inks: inks
+          .map((c) => [linearLight(c[0]), linearLight(c[1]), linearLight(c[2])])
+          .toList(),
+      gamutCompression: s.calibration.enabled ? s.gamutCompression : 0,
     );
     for (var i = 0; i < w * h; i++) {
-      final index = result.indices[i], color = palette[index];
+      final index = result.indices[i], color = inks[index];
       counts[index]++;
       output.setPixelRgb(
         i % w,
@@ -431,8 +467,10 @@ ProcessedImage processPrepared(
         s.perceptual,
         chromaPenalty: .25 * (natural?.protection[y * w + x] ?? 0),
         monochrome: natural?.neutral[y * w + x] == 1,
+        colors: inks,
+        labColors: labInks,
       );
-      final color = palette[index];
+      final color = inks[index];
       indices[y * w + x] = index;
       counts[index]++;
       output.setPixelRgb(

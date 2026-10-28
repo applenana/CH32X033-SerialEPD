@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'imaging/processor.dart';
+import 'imaging/palette_calibration.dart';
 import 'imaging/geometry.dart';
 import 'imaging/auto_tune_job.dart';
 import 'protocol/client.dart';
@@ -101,6 +102,9 @@ class StudioController extends ChangeNotifier {
     unawaited(_saveSettings());
     scheduleProcess(immediate: true);
   }
+
+  void updateCalibration(PaletteCalibration value) =>
+      updateSettings(settings.copyWith(calibration: value));
 
   Future<void> _saveSettings() async {
     try {
