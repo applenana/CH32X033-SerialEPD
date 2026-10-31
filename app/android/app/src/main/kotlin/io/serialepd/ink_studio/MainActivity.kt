@@ -1,9 +1,12 @@
 package io.serialepd.ink_studio
 
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
@@ -23,11 +26,15 @@ class MainActivity : FlutterActivity() {
                     return@setMethodCallHandler result.error("gallery_busy", "Image selection is already open", null)
                 }
                 galleryResult = result
-                val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                    type = "image/*"
-                    addCategory(Intent.CATEGORY_OPENABLE)
+                val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    Intent(MediaStore.ACTION_PICK_IMAGES).apply { type = "image/*" }
+                } else {
+                    Intent(Intent.ACTION_GET_CONTENT).apply {
+                        type = "image/*"
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                    }
                 }
-                startActivityForResult(Intent.createChooser(intent, "选择图片"), 4102)
+                startActivityForResult(intent, 4102)
             }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "io.serialepd/power")

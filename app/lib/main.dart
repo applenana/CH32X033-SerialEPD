@@ -665,21 +665,30 @@ class _StudioPageState extends State<StudioPage> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Container(
-                            width: 20,
+                            width: 24,
                             height: 2,
                             color: const Color(0xff88938a),
                           ),
                           Container(
-                            width: 14,
-                            height: 22,
+                            width: 18,
+                            height: 26,
                             decoration: BoxDecoration(
                               color: const Color(0xff203d3b),
-                              borderRadius: BorderRadius.circular(5),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: const Color(0xff58716b),
+                                width: 1,
+                              ),
                             ),
-                            child: const Icon(
-                              Icons.usb_rounded,
-                              size: 12,
-                              color: Color(0xfff6d56c),
+                            child: Center(
+                              child: Container(
+                                width: 7,
+                                height: 15,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xfff6d56c),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
                             ),
                           ),
                         ],

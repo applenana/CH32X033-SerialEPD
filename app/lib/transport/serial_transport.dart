@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'desktop_config.dart';
 import 'dart:io';
 import 'dart:isolate';
