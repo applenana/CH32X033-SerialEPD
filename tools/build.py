@@ -35,8 +35,8 @@ def main():
               "-Os", "-g", "-ffunction-sections", "-fdata-sections", "-fno-common"]
     includes = ["-I" + str(ROOT / p) for p in ("User", "Core", "Debug", "Peripheral/inc")]
     sources = sorted((ROOT / "User").glob("*.c"))
-    sources += [ROOT / "Core/core_riscv.c", ROOT / "Startup/startup_ch32x035.S"]
-    sources += [ROOT / "Peripheral/src" / ("ch32x035_" + p + ".c") for p in ("gpio", "rcc", "spi", "tim", "misc", "iwdg")]
+    sources += [ROOT / "Core/core_riscv.c", ROOT / "Debug/debug.c", ROOT / "Startup/startup_ch32x035.S"]
+    sources += [ROOT / "Peripheral/src" / ("ch32x035_" + p + ".c") for p in ("gpio", "rcc", "spi", "tim", "misc", "iwdg", "pwr")]
     objects = []
     for source in sources:
         obj = out / ("_".join(source.relative_to(ROOT).parts) + ".o")

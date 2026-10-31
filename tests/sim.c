@@ -2,6 +2,9 @@
 #include <string.h>
 #include "protocol.h"
 #include "epd.h"
+#ifdef SERIAL_EPD_USB_SIM
+#include "cdc.h"
+#endif
 static uint8_t output[128], busy, dc, cs, rst, current_cmd, spi_fail;
 static uint16_t output_len, windows[600], window_count;
 static uint32_t clock_ms, ram_bytes, refreshes, ram_crc, init_commands;
@@ -24,7 +27,13 @@ int board_spi_write(const uint8_t *data,uint16_t n)
     }
     return 0;
 }
-void protocol_send(const uint8_t *p,uint16_t n) { memcpy(output,p,n); output_len=n; }
+void protocol_send(const uint8_t *p,uint16_t n) {
+#ifdef SERIAL_EPD_USB_SIM
+    cdc_send(p,n);
+#else
+    memcpy(output,p,n); output_len=n;
+#endif
+}
 void sim_reset(void)
 {
     busy=dc=spi_fail=0; cs=rst=1; output_len=window_count=0;

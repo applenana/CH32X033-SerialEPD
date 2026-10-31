@@ -466,7 +466,7 @@ typedef struct
     };
 } USBPD_TypeDef;
 
-/* USBFS Registers */
+/* USBFS Registers: RX_LEN layout backported from WCH V1.0.3 (2025/10/29). */
 typedef struct
 {
     __IO uint8_t  BASE_CTRL;
@@ -477,11 +477,12 @@ typedef struct
     __IO uint8_t  MIS_ST;
     __IO uint8_t  INT_FG;
     __IO uint8_t  INT_ST;
-    __IO uint32_t RX_LEN;
+    __IO uint16_t RX_LEN;
+    uint16_t      RESERVED1;
     __IO uint8_t  UEP4_1_MOD;
     __IO uint8_t  UEP2_3_MOD;
     __IO uint8_t  UEP567_MOD;
-    uint8_t       RESERVED1;
+    uint8_t       RESERVED2;
     __IO uint32_t UEP0_DMA;
     __IO uint32_t UEP1_DMA;
     __IO uint32_t UEP2_DMA;
@@ -521,7 +522,6 @@ typedef struct
             __IO uint16_t  UEP4_CTRL_H;
         };
     };
-    uint32_t      RESERVED2;
     uint32_t      RESERVED3;
     uint32_t      RESERVED4;
     uint32_t      RESERVED5;
@@ -529,10 +529,11 @@ typedef struct
     uint32_t      RESERVED7;
     uint32_t      RESERVED8;
     uint32_t      RESERVED9;
+    uint32_t      RESERVED10;
     __IO uint32_t UEP5_DMA;
     __IO uint32_t UEP6_DMA;
     __IO uint32_t UEP7_DMA;
-    uint32_t      RESERVED10;
+    uint32_t      RESERVED11;
     union{
         __IO uint32_t  UEP5_CTRL;
         struct{

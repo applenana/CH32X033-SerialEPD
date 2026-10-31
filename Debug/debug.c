@@ -172,6 +172,7 @@ void SDI_Printf_Enable(void)
 __attribute__((used))
 int _write(int fd, char *buf, int size)
 {
+    (void)fd;
     int i = 0;
 
 #if (SDI_PRINT == SDI_PR_OPEN)

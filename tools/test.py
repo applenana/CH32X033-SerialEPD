@@ -27,6 +27,16 @@ def main():
                     "-I" + str(ROOT / "Peripheral/inc"), str(ROOT / "tests/usb_sim.c"),
                     str(ROOT / "User/usb_desc.c"), "-o", str(usb_library)], check=True, env=env)
     env["SERIALEPD_USB_SIM"] = str(usb_library)
+    # Exercise the actual USB controller, stream adapter, protocol and EPD together.
+    usb_protocol = out / ("usb_protocol_sim.dll" if os.name == "nt" else "usb_protocol_sim.so")
+    subprocess.run([gcc, "-std=c11", "-Wall", "-Wextra", "-Werror", "-Wno-pointer-to-int-cast",
+                    "-DSERIAL_EPD_HOST_TEST", "-DSERIAL_EPD_USB_SIM", "-O1", "-g", "-shared", "-fPIC",
+                    "-I" + str(ROOT / "tests/fake"), "-I" + str(ROOT / "User"),
+                    "-I" + str(ROOT / "Peripheral/inc"),
+                    *[str(ROOT / s) for s in ("tests/usb_sim.c", "tests/sim.c", "User/protocol.c",
+                                              "User/epd.c", "User/usb_desc.c")],
+                    "-o", str(usb_protocol)], check=True, env=env)
+    env["SERIALEPD_USB_PROTOCOL_SIM"] = str(usb_protocol)
     subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"], cwd=ROOT, env=env, check=True)
 
 if __name__ == "__main__":

@@ -1,0 +1,495 @@
+{
+  "source": "WCH SimulateCDC V1.0.1 (2025-03-10), hardware-confirmed official example",
+  "source_sha256": "6892e03a1309e2bfba7253cccc545aaf0502121eb1864a8675e87a7e71da5064",
+  "scope": "EP0 control register and payload trace from official controller; project descriptors linked; UART/PHY calls stubbed for host execution; not a physical USB capture",
+  "events": [
+    {
+      "event": "reset",
+      "args": [],
+      "expected": {
+        "ctrl": 2,
+        "address": 0,
+        "config": 0,
+        "data": ""
+      }
+    },
+    {
+      "event": "setup",
+      "args": [
+        128,
+        6,
+        256,
+        0,
+        8
+      ],
+      "expected": {
+        "ctrl": 200,
+        "address": 0,
+        "config": 0,
+        "data": "1201100102000040"
+      }
+    },
+    {
+      "event": "in",
+      "args": [],
+      "expected": {
+        "ctrl": 128,
+        "address": 0,
+        "config": 0,
+        "data": ""
+      }
+    },
+    {
+      "event": "out",
+      "args": [
+        ""
+      ],
+      "expected": {
+        "ctrl": 192,
+        "address": 0,
+        "config": 0,
+        "data": ""
+      }
+    },
+    {
+      "event": "reset",
+      "args": [],
+      "expected": {
+        "ctrl": 2,
+        "address": 0,
+        "config": 0,
+        "data": ""
+      }
+    },
+    {
+      "event": "setup",
+      "args": [
+        0,
+        5,
+        37,
+        0,
+        0
+      ],
+      "expected": {
+        "ctrl": 200,
+        "address": 0,
+        "config": 0,
+        "data": ""
+      }
+    },
+    {
+      "event": "in",
+      "args": [],
+      "expected": {
+        "ctrl": 192,
+        "address": 37,
+        "config": 0,
+        "data": ""
+      }
+    },
+    {
+      "event": "setup",
+      "args": [
+        128,
+        6,
+        256,
+        0,
+        18
+      ],
+      "expected": {
+        "ctrl": 200,
+        "address": 37,
+        "config": 0,
+        "data": "1201100102000040861a0cfe010001020001"
+      }
+    },
+    {
+      "event": "in",
+      "args": [],
+      "expected": {
+        "ctrl": 128,
+        "address": 37,
+        "config": 0,
+        "data": ""
+      }
+    },
+    {
+      "event": "out",
+      "args": [
+        ""
+      ],
+      "expected": {
+        "ctrl": 192,
+        "address": 37,
+        "config": 0,
+        "data": ""
+      }
+    },
+    {
+      "event": "setup",
+      "args": [
+        128,
+        6,
+        512,
+        0,
+        9
+      ],
+      "expected": {
+        "ctrl": 200,
+        "address": 37,
+        "config": 0,
+        "data": "090243000201008032"
+      }
+    },
+    {
+      "event": "in",
+      "args": [],
+      "expected": {
+        "ctrl": 128,
+        "address": 37,
+        "config": 0,
+        "data": ""
+      }
+    },
+    {
+      "event": "out",
+      "args": [
+        ""
+      ],
+      "expected": {
+        "ctrl": 192,
+        "address": 37,
+        "config": 0,
+        "data": ""
+      }
+    },
+    {
+      "event": "setup",
+      "args": [
+        128,
+        6,
+        512,
+        0,
+        67
+      ],
+      "expected": {
+        "ctrl": 200,
+        "address": 37,
+        "config": 0,
+        "data": "090243000201008032090400000102020100052400100105240100010424020205240600010705810340000109040100020a0000000705020240000007058302"
+      }
+    },
+    {
+      "event": "in",
+      "args": [],
+      "expected": {
+        "ctrl": 136,
+        "address": 37,
+        "config": 0,
+        "data": "400000"
+      }
+    },
+    {
+      "event": "in",
+      "args": [],
+      "expected": {
+        "ctrl": 192,
+        "address": 37,
+        "config": 0,
+        "data": ""
+      }
+    },
+    {
+      "event": "out",
+      "args": [
+        ""
+      ],
+      "expected": {
+        "ctrl": 192,
+        "address": 37,
+        "config": 0,
+        "data": ""
+      }
+    },
+    {
+      "event": "setup",
+      "args": [
+        128,
+        6,
+        768,
+        0,
+        255
+      ],
+      "expected": {
+        "ctrl": 200,
+        "address": 37,
+        "config": 0,
+        "data": "04030904"
+      }
+    },
+    {
+      "event": "in",
+      "args": [],
+      "expected": {
+        "ctrl": 128,
+        "address": 37,
+        "config": 0,
+        "data": ""
+      }
+    },
+    {
+      "event": "out",
+      "args": [
+        ""
+      ],
+      "expected": {
+        "ctrl": 192,
+        "address": 37,
+        "config": 0,
+        "data": ""
+      }
+    },
+    {
+      "event": "setup",
+      "args": [
+        128,
+        6,
+        769,
+        1033,
+        255
+      ],
+      "expected": {
+        "ctrl": 200,
+        "address": 37,
+        "config": 0,
+        "data": "0e037700630068002e0063006e00"
+      }
+    },
+    {
+      "event": "in",
+      "args": [],
+      "expected": {
+        "ctrl": 128,
+        "address": 37,
+        "config": 0,
+        "data": ""
+      }
+    },
+    {
+      "event": "out",
+      "args": [
+        ""
+      ],
+      "expected": {
+        "ctrl": 192,
+        "address": 37,
+        "config": 0,
+        "data": ""
+      }
+    },
+    {
+      "event": "setup",
+      "args": [
+        128,
+        6,
+        770,
+        1033,
+        255
+      ],
+      "expected": {
+        "ctrl": 200,
+        "address": 37,
+        "config": 0,
+        "data": "1403530065007200690061006c00450050004400"
+      }
+    },
+    {
+      "event": "in",
+      "args": [],
+      "expected": {
+        "ctrl": 128,
+        "address": 37,
+        "config": 0,
+        "data": ""
+      }
+    },
+    {
+      "event": "out",
+      "args": [
+        ""
+      ],
+      "expected": {
+        "ctrl": 192,
+        "address": 37,
+        "config": 0,
+        "data": ""
+      }
+    },
+    {
+      "event": "setup",
+      "args": [
+        0,
+        9,
+        1,
+        0,
+        0
+      ],
+      "expected": {
+        "ctrl": 200,
+        "address": 37,
+        "config": 1,
+        "data": ""
+      }
+    },
+    {
+      "event": "in",
+      "args": [],
+      "expected": {
+        "ctrl": 192,
+        "address": 37,
+        "config": 1,
+        "data": ""
+      }
+    },
+    {
+      "event": "setup",
+      "args": [
+        161,
+        33,
+        0,
+        0,
+        7
+      ],
+      "expected": {
+        "ctrl": 200,
+        "address": 37,
+        "config": 1,
+        "data": "00c20100000008"
+      }
+    },
+    {
+      "event": "in",
+      "args": [],
+      "expected": {
+        "ctrl": 192,
+        "address": 37,
+        "config": 1,
+        "data": "00c20100000008"
+      }
+    },
+    {
+      "event": "out",
+      "args": [
+        ""
+      ],
+      "expected": {
+        "ctrl": 192,
+        "address": 37,
+        "config": 1,
+        "data": ""
+      }
+    },
+    {
+      "event": "setup",
+      "args": [
+        33,
+        32,
+        0,
+        0,
+        7
+      ],
+      "expected": {
+        "ctrl": 194,
+        "address": 37,
+        "config": 1,
+        "data": ""
+      }
+    },
+    {
+      "event": "out",
+      "args": [
+        "00100e00000008"
+      ],
+      "expected": {
+        "ctrl": 192,
+        "address": 37,
+        "config": 1,
+        "data": ""
+      }
+    },
+    {
+      "event": "in",
+      "args": [],
+      "expected": {
+        "ctrl": 192,
+        "address": 37,
+        "config": 1,
+        "data": ""
+      }
+    },
+    {
+      "event": "setup",
+      "args": [
+        161,
+        33,
+        0,
+        0,
+        7
+      ],
+      "expected": {
+        "ctrl": 200,
+        "address": 37,
+        "config": 1,
+        "data": "00100e00000008"
+      }
+    },
+    {
+      "event": "in",
+      "args": [],
+      "expected": {
+        "ctrl": 192,
+        "address": 37,
+        "config": 1,
+        "data": "00100e00000008"
+      }
+    },
+    {
+      "event": "out",
+      "args": [
+        ""
+      ],
+      "expected": {
+        "ctrl": 192,
+        "address": 37,
+        "config": 1,
+        "data": ""
+      }
+    },
+    {
+      "event": "setup",
+      "args": [
+        33,
+        34,
+        3,
+        0,
+        0
+      ],
+      "expected": {
+        "ctrl": 200,
+        "address": 37,
+        "config": 1,
+        "data": ""
+      }
+    },
+    {
+      "event": "in",
+      "args": [],
+      "expected": {
+        "ctrl": 192,
+        "address": 37,
+        "config": 1,
+        "data": ""
+      }
+    }
+  ]
+}
