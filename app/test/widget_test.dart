@@ -43,6 +43,13 @@ void main() {
       await tester.pumpAndSettle();
       await tester.runAsync(
         () => precacheImage(
+          const AssetImage('assets/device_frame.png'),
+          tester.element(find.byKey(const ValueKey('device-frame-preview'))),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.runAsync(
+        () => precacheImage(
           MemoryImage(c.image!.preview),
           tester.element(find.byType(StudioPage)),
         ),
@@ -51,21 +58,33 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.text('墨屿'), findsOneWidget);
       expect(find.text('我的设备'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('device-frame-preview')),
+        findsOneWidget,
+      );
       if (size.width == 1440) {
         await tester.tap(find.byTooltip('旋转预览框'));
         await tester.pumpAndSettle();
         expect(c.previewRotation, 1);
         c.previewRotation = 0;
         c.changed();
+        await tester.pumpAndSettle();
       }
       if (size.width == 390) {
         expect(find.text('更多配置'), findsOneWidget);
         expect(find.text('亮度'), findsNothing);
-        await tester.ensureVisible(find.text('更多配置'));
+        await tester.scrollUntilVisible(
+          find.text('更多配置'),
+          300,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
         await tester.tap(find.text('更多配置'));
         await tester.pumpAndSettle();
         expect(find.text('亮度'), findsOneWidget);
       }
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, 1400));
+      await tester.pumpAndSettle();
       if (size.width == 1440 || size.width == 390) {
         await tester.runAsync(() async {
           final boundary =
