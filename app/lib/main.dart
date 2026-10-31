@@ -86,6 +86,11 @@ class _StudioPageState extends State<StudioPage> {
   late final StudioController c;
   bool _openingEditor = false;
 
+  void _rotatePreviewFrame(int delta) {
+    c.previewRotation = (c.previewRotation + delta) % 4;
+    c.changed();
+  }
+
   Future<void> _editPalette() async {
     final current = c.settings.calibration;
     final values = current.colors
@@ -102,38 +107,58 @@ class _StudioPageState extends State<StudioPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('输入统一拍摄条件下的黑、白、黄、红中心区域 RGB（0–255）。', style: TextStyle(fontSize: 11)),
-                const SizedBox(height: 12),
-                for (var row = 0; row < 4; row++) Row(
-                  children: [
-                    SizedBox(width: 34, child: Text(['黑', '白', '黄', '红'][row])),
-                    for (var col = 0; col < 3; col++) Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 6),
-                        child: TextField(
-                          controller: values[row * 3 + col],
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(labelText: ['R', 'G', 'B'][col]),
-                          onChanged: (_) => setState(() {}),
-                        ),
-                      ),
-                    ),
-                  ],
+                const Text(
+                  '输入统一拍摄条件下的黑、白、黄、红中心区域 RGB（0–255）。',
+                  style: TextStyle(fontSize: 11),
                 ),
+                const SizedBox(height: 12),
+                for (var row = 0; row < 4; row++)
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 34,
+                        child: Text(['黑', '白', '黄', '红'][row]),
+                      ),
+                      for (var col = 0; col < 3; col++)
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: TextField(
+                              controller: values[row * 3 + col],
+                              keyboardType: TextInputType.number,
+                              decoration: InputDecoration(
+                                labelText: ['R', 'G', 'B'][col],
+                              ),
+                              onChanged: (_) => setState(() {}),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
               ],
             ),
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
           TextButton(
             onPressed: () {
-              final rgb = values.map((v) => int.tryParse(v.text.trim()) ?? -1).toList();
+              final rgb = values
+                  .map((v) => int.tryParse(v.text.trim()) ?? -1)
+                  .toList();
               if (rgb.any((v) => v < 0 || v > 255)) return;
-              Navigator.pop(dialogContext, PaletteCalibration.fromRgb8(
-                black: rgb.sublist(0, 3), white: rgb.sublist(3, 6),
-                yellow: rgb.sublist(6, 9), red: rgb.sublist(9, 12),
-              ));
+              Navigator.pop(
+                dialogContext,
+                PaletteCalibration.fromRgb8(
+                  black: rgb.sublist(0, 3),
+                  white: rgb.sublist(3, 6),
+                  yellow: rgb.sublist(6, 9),
+                  red: rgb.sublist(9, 12),
+                ),
+              );
             },
             child: const Text('应用'),
           ),
@@ -145,6 +170,7 @@ class _StudioPageState extends State<StudioPage> {
     }
     if (result != null) c.updateCalibration(result);
   }
+
   Future<void> _editCrop() async {
     if (_openingEditor) return;
     setState(() => _openingEditor = true);
@@ -255,7 +281,7 @@ class _StudioPageState extends State<StudioPage> {
                             const SizedBox(height: 20),
                             _canvas(mobile),
                             const SizedBox(height: 20),
-                            _settings(),
+                            _settings(compact: mobile),
                             const SizedBox(height: 20),
                             _transfer(),
                             const SizedBox(height: 16),
@@ -546,6 +572,11 @@ class _StudioPageState extends State<StudioPage> {
               icon: const Icon(Icons.crop_rotate_rounded),
               label: const Text('裁切'),
             ),
+            IconButton(
+              tooltip: '旋转预览框',
+              onPressed: () => _rotatePreviewFrame(1),
+              icon: const Icon(Icons.screen_rotation_alt_rounded),
+            ),
             PopupMenuButton<String>(
               tooltip: '导出与示例',
               onSelected: (v) {
@@ -579,64 +610,103 @@ class _StudioPageState extends State<StudioPage> {
             borderRadius: BorderRadius.circular(16),
           ),
           child: AspectRatio(
-            aspectRatio: 768 / 552,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Color(0x18203d3b),
-                        blurRadius: 18,
-                        offset: Offset(0, 8),
+            aspectRatio: c.previewRotation.isEven ? 768 / 552 : 552 / 768,
+            child: RotatedBox(
+              quarterTurns: c.previewRotation,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(right: 26),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border.all(
+                        color: const Color(0xffc9cec3),
+                        width: 2,
                       ),
-                    ],
-                  ),
-                  child: c.image == null
-                      ? const Center(
-                          child: Icon(
-                            Icons.landscape_outlined,
-                            color: muted,
-                            size: 56,
-                          ),
-                        )
-                      : ClipRect(
-                          child: InteractiveViewer(
-                            minScale: 1,
-                            maxScale: 5,
-                            child: Image.memory(
-                              c.showOriginal
-                                  ? c.image!.original
-                                  : c.image!.preview,
-                              gaplessPlayback: true,
-                              filterQuality: FilterQuality.medium,
-                              fit: BoxFit.contain,
+                      borderRadius: BorderRadius.circular(5),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x18203d3b),
+                          blurRadius: 18,
+                          offset: Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: c.image == null
+                        ? const Center(
+                            child: Icon(
+                              Icons.landscape_outlined,
+                              color: muted,
+                              size: 56,
+                            ),
+                          )
+                        : ClipRect(
+                            child: InteractiveViewer(
+                              minScale: 1,
+                              maxScale: 5,
+                              child: Image.memory(
+                                c.showOriginal
+                                    ? c.image!.original
+                                    : c.image!.preview,
+                                gaplessPlayback: true,
+                                filterQuality: FilterQuality.medium,
+                                fit: BoxFit.contain,
+                              ),
                             ),
                           ),
-                        ),
-                ),
-                if (c.processing)
-                  Align(
-                    alignment: Alignment.topCenter,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 8,
-                      ),
-                      margin: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: .94),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Text(
-                        '正在生成四色预览…',
-                        style: TextStyle(fontSize: 11, color: ink),
+                  ),
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 20,
+                            height: 2,
+                            color: const Color(0xff88938a),
+                          ),
+                          Container(
+                            width: 14,
+                            height: 22,
+                            decoration: BoxDecoration(
+                              color: const Color(0xff203d3b),
+                              borderRadius: BorderRadius.circular(5),
+                            ),
+                            child: const Icon(
+                              Icons.usb_rounded,
+                              size: 12,
+                              color: Color(0xfff6d56c),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-              ],
+                  if (c.processing)
+                    Align(
+                      alignment: Alignment.topCenter,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        margin: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: .94),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text(
+                          '正在生成四色预览…',
+                          style: TextStyle(fontSize: 11, color: ink),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ),
@@ -684,266 +754,289 @@ class _StudioPageState extends State<StudioPage> {
       ],
     ),
   );
-  Widget _settings() => _card(
-    Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _title('四色调色室', '为电子纸，找到恰好的层次。', icon: Icons.tune_rounded),
-        const SizedBox(height: 12),
-        FilledButton.icon(
-          onPressed: c.autoTuning
-              ? c.cancelAuto
-              : c.transferring
-              ? null
-              : c.autoAdjust,
-          icon: Icon(
-            c.autoTuning ? Icons.stop_rounded : Icons.auto_fix_high_rounded,
-            size: 18,
-          ),
-          label: Text(c.autoTuning ? '取消 AUTO' : 'AUTO · 自动优化'),
+  Widget _settings({bool compact = false}) => _card(
+    compact
+        ? ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: EdgeInsets.zero,
+            initiallyExpanded: false,
+            leading: const Icon(Icons.tune_rounded, color: ink),
+            title: const Text(
+              '更多配置',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: const Text(
+              '默认参数已就绪，点击展开调节',
+              style: TextStyle(fontSize: 11, color: muted),
+            ),
+            children: [_settingsBody()],
+          )
+        : _settingsBody(),
+  );
+  Widget _settingsBody() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _title('四色调色室', '为电子纸，找到恰好的层次。', icon: Icons.tune_rounded),
+      const SizedBox(height: 12),
+      FilledButton.icon(
+        onPressed: c.autoTuning
+            ? c.cancelAuto
+            : c.transferring
+            ? null
+            : c.autoAdjust,
+        icon: Icon(
+          c.autoTuning ? Icons.stop_rounded : Icons.auto_fix_high_rounded,
+          size: 18,
         ),
-        if (c.autoTuning) ...[
-          const SizedBox(height: 8),
-          LinearProgressIndicator(value: c.autoProgress),
-          const SizedBox(height: 6),
-          Text(
-            c.autoPhase ?? '正在分析原图…',
-            style: const TextStyle(fontSize: 11, color: muted),
-          ),
-        ] else if (c.autoReport != null) ...[
-          const SizedBox(height: 8),
-          Text(
-            c.autoReport!,
-            style: const TextStyle(fontSize: 11, color: muted, height: 1.6),
-          ),
-          if (c.canUndoAuto)
-            TextButton(onPressed: c.undoAuto, child: const Text('撤销 AUTO')),
-        ],
+        label: Text(c.autoTuning ? '取消 AUTO' : 'AUTO · 自动优化'),
+      ),
+      if (c.autoTuning) ...[
         const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: c.resetSettings,
-          icon: const Icon(Icons.restart_alt_rounded, size: 18),
-          label: const Text('重置所有参数'),
-        ),
-        const Padding(
-          padding: EdgeInsets.only(top: 4, bottom: 16),
-          child: Text(
-            '一键恢复算法、调色和适配默认值，保留图片与裁切。',
-            style: TextStyle(fontSize: 10, color: muted, height: 1.6),
-          ),
-        ),
-        Row(
-          children: [
-            Expanded(child: _preset('照片', DitherMode.perceptual)),
-            const SizedBox(width: 5),
-            Expanded(child: _preset('插画', DitherMode.burkes)),
-            const SizedBox(width: 5),
-            Expanded(child: _preset('文字', DitherMode.none)),
-          ],
-        ),
-        const SizedBox(height: 18),
-        DropdownButtonFormField<DitherMode>(
-          initialValue: c.settings.mode,
-          key: ValueKey(c.settings.mode),
-          isExpanded: true,
-          decoration: const InputDecoration(labelText: '图像重建方式'),
-          items: DitherMode.values
-              .map(
-                (m) => DropdownMenuItem(
-                  value: m,
-                  child: Text(m.label, style: const TextStyle(fontSize: 12)),
-                ),
-              )
-              .toList(),
-          onChanged: (m) {
-            if (m != null) c.updateSettings(c.settings.copyWith(mode: m));
-          },
-        ),
-        const SizedBox(height: 10),
+        LinearProgressIndicator(value: c.autoProgress),
+        const SizedBox(height: 6),
         Text(
-          c.settings.mode.description,
+          c.autoPhase ?? '正在分析原图…',
+          style: const TextStyle(fontSize: 11, color: muted),
+        ),
+      ] else if (c.autoReport != null) ...[
+        const SizedBox(height: 8),
+        Text(
+          c.autoReport!,
           style: const TextStyle(fontSize: 11, color: muted, height: 1.6),
         ),
-        const SizedBox(height: 18),
-        _slider(
-          '亮度',
-          c.settings.brightness,
-          -.3,
-          .3,
-          (v) => c.settings.copyWith(brightness: v),
-        ),
-        _slider(
-          '对比度',
-          c.settings.contrast,
-          .5,
-          1.8,
-          (v) => c.settings.copyWith(contrast: v),
-        ),
-        _slider(
-          '饱和度',
-          c.settings.saturation,
-          0,
-          2,
-          (v) => c.settings.copyWith(saturation: v),
-        ),
-        if (c.settings.mode != DitherMode.perceptual &&
-            c.settings.mode != DitherMode.blueNoise)
-          _slider(
-            '抖动强度',
-            c.settings.strength,
-            0,
-            1,
-            (v) => c.settings.copyWith(strength: v),
-          ),
-        const Divider(height: 24),
-        Row(
-          children: [
-            const Text('画面适配', style: TextStyle(fontSize: 12)),
-            const Spacer(),
-            SegmentedButton<bool>(
-              segments: const [
-                ButtonSegment(value: false, label: Text('完整')),
-                ButtonSegment(value: true, label: Text('铺满')),
-              ],
-              selected: {c.settings.cover},
-              showSelectedIcon: false,
-              style: const ButtonStyle(visualDensity: VisualDensity.compact),
-              onSelectionChanged: (v) =>
-                  c.updateSettings(c.settings.copyWith(cover: v.first)),
-            ),
-          ],
-        ),
-        ExpansionTile(
-          tilePadding: EdgeInsets.zero,
-          childrenPadding: EdgeInsets.zero,
-          title: const Text('高级调节', style: TextStyle(fontSize: 12)),
-          children: [
-            _slider(
-              'Gamma',
-              c.settings.gamma,
-              .5,
-              2,
-              (v) => c.settings.copyWith(gamma: v),
-            ),
-            if (c.settings.mode != DitherMode.perceptual &&
-                c.settings.mode != DitherMode.blueNoise)
-              SwitchListTile.adaptive(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('感知色彩匹配', style: TextStyle(fontSize: 12)),
-                subtitle: const Text(
-                  'OKLab 色彩距离',
-                  style: TextStyle(fontSize: 10),
-                ),
-                value: c.settings.perceptual,
-                onChanged: (v) =>
-                    c.updateSettings(c.settings.copyWith(perceptual: v)),
-              ),
-            if (c.settings.mode != DitherMode.perceptual &&
-                c.settings.mode != DitherMode.blueNoise)
-              SwitchListTile.adaptive(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('蛇形扫描', style: TextStyle(fontSize: 12)),
-                value: c.settings.serpentine,
-                onChanged: (v) =>
-                    c.updateSettings(c.settings.copyWith(serpentine: v)),
-              ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: List.generate(
-            4,
-            (i) => Column(
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: [
-                      const Color(0xff202923),
-                      Colors.white,
-                      const Color(0xffffd04a),
-                      const Color(0xffd95040),
-                    ][i],
-                    shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0xffdcded6)),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  c.image == null
-                      ? ['黑', '白', '黄', '红'][i]
-                      : '${(c.image!.counts[i] / c.image!.indices.length * 100).round()}%',
-                  style: const TextStyle(fontSize: 10, color: muted),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        const Text(
-          '原生黑白黄红四色；灰阶由网点混色呈现。实体颜色受光线与面板批次影响。',
-          style: TextStyle(fontSize: 10, color: muted, height: 1.6),
-        ),
-        const Divider(height: 28),
-        _slider(
-          '观看柔和度',
-          c.settings.softness,
-          0,
-          1,
-          (v) => c.settings.copyWith(softness: v),
-          enabled: c.settings.mode == DitherMode.perceptual,
-        ),
-        _slider(
-          '自然映射',
-          c.settings.naturalMapping,
-          0,
-          1,
-          (v) => c.settings.copyWith(naturalMapping: v),
-        ),
-        _slider(
-          '纸白保护',
-          c.settings.paperWhite,
-          0,
-          .15,
-          (v) => c.settings.copyWith(paperWhite: v),
-          enabled:
-              c.settings.mode == DitherMode.perceptual ||
-              c.settings.mode == DitherMode.blueNoise,
-        ),
-        _slider(
-          '动态范围压缩',
-          c.settings.dynamicRange,
-          0,
-          1,
-          (v) => c.settings.copyWith(dynamicRange: v),
-        ),
-        _slider(
-          '色域压缩',
-          c.settings.gamutCompression,
-          0,
-          1,
-          (v) => c.settings.copyWith(gamutCompression: v),
-          enabled: c.settings.mode == DitherMode.perceptual ||
-              c.settings.mode == DitherMode.blueNoise,
-        ),
-        OutlinedButton.icon(
-          onPressed: _editPalette,
-          icon: Icon(c.settings.calibration.enabled ? Icons.colorize : Icons.palette_outlined, size: 17),
-          label: Text(c.settings.calibration.enabled ? '编辑实测色板' : '输入实测色板'),
-        ),
-        if (c.settings.calibration.enabled)
-          TextButton(
-            onPressed: () => c.updateCalibration(PaletteCalibration.ideal),
-            child: const Text('恢复理想色板'),
-          ),
-        const Text(
-          '动态范围：温和调整暗部与高光，保留纯黑纯白。色域压缩：仅用于 DBS / 蓝噪声，保持可达亮度，降低超色域偏色；域内颜色不变。自然映射较强时，色域滑块变化可能较小。两项默认关闭，并非越高越好。',
-          style: TextStyle(fontSize: 10, color: muted, height: 1.6),
-        ),
+        if (c.canUndoAuto)
+          TextButton(onPressed: c.undoAuto, child: const Text('撤销 AUTO')),
       ],
-    ),
+      const SizedBox(height: 8),
+      OutlinedButton.icon(
+        onPressed: c.resetSettings,
+        icon: const Icon(Icons.restart_alt_rounded, size: 18),
+        label: const Text('重置所有参数'),
+      ),
+      const Padding(
+        padding: EdgeInsets.only(top: 4, bottom: 16),
+        child: Text(
+          '一键恢复算法、调色和适配默认值，保留图片与裁切。',
+          style: TextStyle(fontSize: 10, color: muted, height: 1.6),
+        ),
+      ),
+      Row(
+        children: [
+          Expanded(child: _preset('照片', DitherMode.perceptual)),
+          const SizedBox(width: 5),
+          Expanded(child: _preset('插画', DitherMode.burkes)),
+          const SizedBox(width: 5),
+          Expanded(child: _preset('文字', DitherMode.none)),
+        ],
+      ),
+      const SizedBox(height: 18),
+      DropdownButtonFormField<DitherMode>(
+        initialValue: c.settings.mode,
+        key: ValueKey(c.settings.mode),
+        isExpanded: true,
+        decoration: const InputDecoration(labelText: '图像重建方式'),
+        items: DitherMode.values
+            .map(
+              (m) => DropdownMenuItem(
+                value: m,
+                child: Text(m.label, style: const TextStyle(fontSize: 12)),
+              ),
+            )
+            .toList(),
+        onChanged: (m) {
+          if (m != null) c.updateSettings(c.settings.copyWith(mode: m));
+        },
+      ),
+      const SizedBox(height: 10),
+      Text(
+        c.settings.mode.description,
+        style: const TextStyle(fontSize: 11, color: muted, height: 1.6),
+      ),
+      const SizedBox(height: 18),
+      _slider(
+        '亮度',
+        c.settings.brightness,
+        -.3,
+        .3,
+        (v) => c.settings.copyWith(brightness: v),
+      ),
+      _slider(
+        '对比度',
+        c.settings.contrast,
+        .5,
+        1.8,
+        (v) => c.settings.copyWith(contrast: v),
+      ),
+      _slider(
+        '饱和度',
+        c.settings.saturation,
+        0,
+        2,
+        (v) => c.settings.copyWith(saturation: v),
+      ),
+      if (c.settings.mode != DitherMode.perceptual &&
+          c.settings.mode != DitherMode.blueNoise)
+        _slider(
+          '抖动强度',
+          c.settings.strength,
+          0,
+          1,
+          (v) => c.settings.copyWith(strength: v),
+        ),
+      const Divider(height: 24),
+      Row(
+        children: [
+          const Text('画面适配', style: TextStyle(fontSize: 12)),
+          const Spacer(),
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(value: false, label: Text('完整')),
+              ButtonSegment(value: true, label: Text('铺满')),
+            ],
+            selected: {c.settings.cover},
+            showSelectedIcon: false,
+            style: const ButtonStyle(visualDensity: VisualDensity.compact),
+            onSelectionChanged: (v) =>
+                c.updateSettings(c.settings.copyWith(cover: v.first)),
+          ),
+        ],
+      ),
+      ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: EdgeInsets.zero,
+        title: const Text('高级调节', style: TextStyle(fontSize: 12)),
+        children: [
+          _slider(
+            'Gamma',
+            c.settings.gamma,
+            .5,
+            2,
+            (v) => c.settings.copyWith(gamma: v),
+          ),
+          if (c.settings.mode != DitherMode.perceptual &&
+              c.settings.mode != DitherMode.blueNoise)
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('感知色彩匹配', style: TextStyle(fontSize: 12)),
+              subtitle: const Text(
+                'OKLab 色彩距离',
+                style: TextStyle(fontSize: 10),
+              ),
+              value: c.settings.perceptual,
+              onChanged: (v) =>
+                  c.updateSettings(c.settings.copyWith(perceptual: v)),
+            ),
+          if (c.settings.mode != DitherMode.perceptual &&
+              c.settings.mode != DitherMode.blueNoise)
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('蛇形扫描', style: TextStyle(fontSize: 12)),
+              value: c.settings.serpentine,
+              onChanged: (v) =>
+                  c.updateSettings(c.settings.copyWith(serpentine: v)),
+            ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: List.generate(
+          4,
+          (i) => Column(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: [
+                    const Color(0xff202923),
+                    Colors.white,
+                    const Color(0xffffd04a),
+                    const Color(0xffd95040),
+                  ][i],
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xffdcded6)),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                c.image == null
+                    ? ['黑', '白', '黄', '红'][i]
+                    : '${(c.image!.counts[i] / c.image!.indices.length * 100).round()}%',
+                style: const TextStyle(fontSize: 10, color: muted),
+              ),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
+      const Text(
+        '原生黑白黄红四色；灰阶由网点混色呈现。实体颜色受光线与面板批次影响。',
+        style: TextStyle(fontSize: 10, color: muted, height: 1.6),
+      ),
+      const Divider(height: 28),
+      _slider(
+        '观看柔和度',
+        c.settings.softness,
+        0,
+        1,
+        (v) => c.settings.copyWith(softness: v),
+        enabled: c.settings.mode == DitherMode.perceptual,
+      ),
+      _slider(
+        '自然映射',
+        c.settings.naturalMapping,
+        0,
+        1,
+        (v) => c.settings.copyWith(naturalMapping: v),
+      ),
+      _slider(
+        '纸白保护',
+        c.settings.paperWhite,
+        0,
+        .15,
+        (v) => c.settings.copyWith(paperWhite: v),
+        enabled:
+            c.settings.mode == DitherMode.perceptual ||
+            c.settings.mode == DitherMode.blueNoise,
+      ),
+      _slider(
+        '动态范围压缩',
+        c.settings.dynamicRange,
+        0,
+        1,
+        (v) => c.settings.copyWith(dynamicRange: v),
+      ),
+      _slider(
+        '色域压缩',
+        c.settings.gamutCompression,
+        0,
+        1,
+        (v) => c.settings.copyWith(gamutCompression: v),
+        enabled:
+            c.settings.mode == DitherMode.perceptual ||
+            c.settings.mode == DitherMode.blueNoise,
+      ),
+      OutlinedButton.icon(
+        onPressed: _editPalette,
+        icon: Icon(
+          c.settings.calibration.enabled
+              ? Icons.colorize
+              : Icons.palette_outlined,
+          size: 17,
+        ),
+        label: Text(c.settings.calibration.enabled ? '编辑实测色板' : '输入实测色板'),
+      ),
+      if (c.settings.calibration.enabled)
+        TextButton(
+          onPressed: () => c.updateCalibration(PaletteCalibration.ideal),
+          child: const Text('恢复理想色板'),
+        ),
+      const Text(
+        '动态范围：温和调整暗部与高光，保留纯黑纯白。色域压缩：仅用于 DBS / 蓝噪声，保持可达亮度，降低超色域偏色；域内颜色不变。自然映射较强时，色域滑块变化可能较小。两项默认关闭，并非越高越好。',
+        style: TextStyle(fontSize: 10, color: muted, height: 1.6),
+      ),
+    ],
   );
   Widget _preset(String name, DitherMode mode) => OutlinedButton(
     style: OutlinedButton.styleFrom(
@@ -1099,4 +1192,3 @@ class _StudioPageState extends State<StudioPage> {
     ),
   );
 }
-

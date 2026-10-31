@@ -72,6 +72,9 @@ void main() {
         Uint8List.fromList(img.encodePng(input)),
         ImageSettings(
           mode: DitherMode.blueNoise,
+          brightness: 0,
+          contrast: 1,
+          saturation: 1,
           calibration: calibration,
           naturalMapping: 0,
         ),
@@ -105,21 +108,24 @@ void main() {
       isFalse,
     );
   });
-  test('Gamut compression changes out-of-gamut magenta without calibration', () {
-    final plain = projectToPalette(.8, .1, .6, const [
-      [0, 0, 0],
-      [1, 1, 1],
-      [1, 1, 0],
-      [1, 0, 0],
-    ], 0);
-    final compressed = projectToPalette(.8, .1, .6, const [
-      [0, 0, 0],
-      [1, 1, 1],
-      [1, 1, 0],
-      [1, 0, 0],
-    ], 1);
-    expect(compressed, isNot(plain));
-  });
+  test(
+    'Gamut compression changes out-of-gamut magenta without calibration',
+    () {
+      final plain = projectToPalette(.8, .1, .6, const [
+        [0, 0, 0],
+        [1, 1, 1],
+        [1, 1, 0],
+        [1, 0, 0],
+      ], 0);
+      final compressed = projectToPalette(.8, .1, .6, const [
+        [0, 0, 0],
+        [1, 1, 1],
+        [1, 1, 0],
+        [1, 0, 0],
+      ], 1);
+      expect(compressed, isNot(plain));
+    },
+  );
   test('Compact algorithm list and legacy preference migration', () {
     expect(DitherMode.values.map((m) => m.name).toSet(), {
       'none',

@@ -36,11 +36,11 @@ class ImageSettings {
   final bool cover, perceptual, serpentine;
   const ImageSettings({
     this.mode = DitherMode.perceptual,
-    this.brightness = 0,
-    this.contrast = 1,
-    this.saturation = 1,
+    this.brightness = .1,
+    this.contrast = 1.1,
+    this.saturation = 1.1,
     this.gamma = 1,
-    this.strength = 1,
+    this.strength = 0,
     this.rotation = 0,
     this.cover = true,
     this.perceptual = true,
@@ -88,7 +88,7 @@ class ImageSettings {
     gamutCompression: gamutCompression ?? this.gamutCompression,
   );
   Map<String, dynamic> toJson() => {
-    'defaultsVersion': 1,
+    'defaultsVersion': 2,
     'mode': mode.name,
     'brightness': brightness,
     'contrast': contrast,
@@ -120,16 +120,21 @@ class ImageSettings {
       'bayer4' || 'bayer8' => 'blueNoise',
       final name => name,
     };
-    final currentDefaults = json['defaultsVersion'] == 1;
+    final currentDefaults = json['defaultsVersion'] == 2;
+    final previousDefaults = !currentDefaults;
+    final brightness = value('brightness', .1, -.3, .3);
+    final contrast = value('contrast', 1.1, .5, 1.8);
+    final saturation = value('saturation', 1.1, 0, 2);
+    final strength = value('strength', 0, 0, 1);
     return ImageSettings(
       mode:
           DitherMode.values.where((m) => m.name == modeName).firstOrNull ??
           DitherMode.perceptual,
-      brightness: value('brightness', 0, -.3, .3),
-      contrast: value('contrast', 1, .5, 1.8),
-      saturation: value('saturation', 1, 0, 2),
+      brightness: previousDefaults && brightness == 0 ? .1 : brightness,
+      contrast: previousDefaults && contrast == 1 ? 1.1 : contrast,
+      saturation: previousDefaults && saturation == 1 ? 1.1 : saturation,
       gamma: value('gamma', 1, .5, 2),
-      strength: value('strength', 1, 0, 1),
+      strength: previousDefaults && strength == 1 ? 0 : strength,
       rotation: json['rotation'] is int ? (json['rotation'] as int) % 4 : 0,
       cover: currentDefaults ? json['cover'] != false : true,
       perceptual: json['perceptual'] != false,

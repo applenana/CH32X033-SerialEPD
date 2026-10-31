@@ -42,8 +42,37 @@ void main() {
       final defaults = const ImageSettings();
       expect(defaults.cover, isTrue);
       expect(
+        [
+          defaults.brightness,
+          defaults.contrast,
+          defaults.saturation,
+          defaults.strength,
+        ],
+        [.1, 1.1, 1.1, 0],
+      );
+      expect(
+        [defaults.gamma, defaults.softness, defaults.naturalMapping],
+        [1, 1, 1],
+      );
+      expect(
         [defaults.softness, defaults.naturalMapping, defaults.paperWhite],
         [1, 1, 0],
+      );
+      final upgraded = ImageSettings.fromJson({
+        'defaultsVersion': 1,
+        'brightness': 0,
+        'contrast': 1,
+        'saturation': 1,
+        'strength': 1,
+      });
+      expect(
+        [
+          upgraded.brightness,
+          upgraded.contrast,
+          upgraded.saturation,
+          upgraded.strength,
+        ],
+        [.1, 1.1, 1.1, 0],
       );
     },
   );

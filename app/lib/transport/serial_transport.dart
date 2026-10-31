@@ -2,8 +2,8 @@ import 'dart:async';
 import 'desktop_config.dart';
 import 'dart:io';
 import 'dart:isolate';
-import 'dart:typed_data';
 import 'package:flutter_libserialport/flutter_libserialport.dart';
+import 'package:flutter/services.dart';
 import 'package:usb_serial/usb_serial.dart';
 
 class DevicePort {
@@ -76,24 +76,9 @@ class SerialService {
 
   Future<SerialTransport> connect(DevicePort device) async {
     if (Platform.isAndroid) {
-      // Firmware VID belongs to WCH, but this device is CDC ACM, not a CH34x bridge.
-      final port = await device.usbDevice?.create(UsbSerial.CDC);
-      if (port == null) throw StateError('无法创建 USB CDC 连接');
-      try {
-        if (!await port.open()) throw StateError('USB 权限未授予，或设备已被占用');
-        await port.setPortParameters(
-          115200,
-          UsbPort.DATABITS_8,
-          UsbPort.STOPBITS_1,
-          UsbPort.PARITY_NONE,
-        );
-        await port.setDTR(true);
-        await port.setRTS(true);
-        return AndroidTransport(port, device.usbDevice!.deviceId);
-      } catch (_) {
-        await port.close();
-        rethrow;
-      }
+      final deviceId = device.usbDevice?.deviceId;
+      if (deviceId == null) throw StateError('USB 设备已断开，请重新搜索');
+      return AndroidTransport.open(deviceId);
     }
     final worker = await DesktopTransport.start();
     try {
@@ -328,41 +313,52 @@ class _NativeDesktopTransport implements SerialTransport {
 }
 
 class AndroidTransport implements SerialTransport {
-  final UsbPort _port;
+  static const _channel = MethodChannel('io.serialepd/usb_cdc');
+  final int _handle;
   final _input = StreamController<Uint8List>.broadcast();
-  StreamSubscription<Uint8List>? _data;
-  StreamSubscription<UsbEvent>? _events;
+  late final StreamSubscription<dynamic> _data;
   bool _closed = false;
-  AndroidTransport(this._port, int? deviceId) {
-    _data = _port.inputStream?.listen(
-      _input.add,
+
+  AndroidTransport._(this._handle, Stream<dynamic> input) {
+    _data = input.listen(
+      (data) {
+        if (!_closed && data is Uint8List) _input.add(data);
+      },
       onError: _input.addError,
       onDone: () {
         if (!_closed) _input.addError(StateError('USB 数据连接已断开'));
       },
     );
-    _events = UsbSerial.usbEventStream?.listen((event) {
-      if (event.event == UsbEvent.ACTION_USB_DETACHED &&
-          event.device?.deviceId == deviceId) {
-        _input.addError(StateError('USB 设备已拔出'));
-      }
-    });
   }
+
+  static Future<AndroidTransport> open(int deviceId) async {
+    final handle = await _channel.invokeMethod<int>('open', deviceId);
+    if (handle == null) throw StateError('无法打开 USB CDC 数据接口');
+    final transport = AndroidTransport._(
+      handle,
+      const EventChannel(
+        'io.serialepd/usb_cdc_events',
+      ).receiveBroadcastStream(),
+    );
+    return transport;
+  }
+
   @override
   Stream<Uint8List> get incoming => _input.stream;
   @override
   Future<void> write(Uint8List bytes) async {
     if (_closed) throw StateError('USB 已断开');
-    await _port.write(bytes).timeout(const Duration(seconds: 3));
+    await _channel
+        .invokeMethod<void>('write', {'handle': _handle, 'data': bytes})
+        .timeout(const Duration(seconds: 3));
   }
 
   @override
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
-    await _events?.cancel();
-    await _data?.cancel();
-    await _port.close();
+    await _data.cancel();
+    await _channel.invokeMethod<void>('close', _handle);
     await _input.close();
   }
 }

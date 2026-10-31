@@ -21,6 +21,7 @@ class StudioController extends ChangeNotifier {
   Uint8List? source;
   CropSpec? crop;
   String imageName = '日落山野 · 内置示例';
+  int previewRotation = 0;
   ProcessedImage? image;
   bool autoTuning = false, _autoRequested = false;
   String? autoPhase, autoReport;
@@ -75,9 +76,8 @@ class StudioController extends ChangeNotifier {
       _prefs = await SharedPreferences.getInstance();
       final saved = _prefs!.getString('imageSettings');
       if (saved != null) {
-        settings = ImageSettings.fromJson(
-          jsonDecode(saved) as Map<String, dynamic>,
-        );
+        final json = jsonDecode(saved) as Map<String, dynamic>;
+        settings = ImageSettings.fromJson(json);
       }
       final savedPanel = _prefs!.getInt('panel');
       if (savedPanel == 0 || savedPanel == 1) panel = savedPanel;
@@ -249,21 +249,41 @@ class StudioController extends ChangeNotifier {
 
   Future<void> importImage() async {
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'],
-        withData: false,
-      );
-      if (result == null || _disposed) return;
-      final file = result.files.single;
-      if (file.size > 25 * 1024 * 1024) {
-        throw const FormatException('图片超过 25 MB，请先缩小');
+      Uint8List bytes;
+      String name;
+      if (Platform.isAndroid) {
+        final picked = await const MethodChannel(
+          'io.serialepd/gallery',
+        ).invokeMapMethod<String, Object?>('pickImage');
+        if (picked == null || _disposed) return;
+        final imageBytes = picked['bytes'];
+        if (imageBytes is! Uint8List) {
+          throw const FormatException('无法读取所选图片');
+        }
+        if (imageBytes.length > 25 * 1024 * 1024) {
+          throw const FormatException('图片超过 25 MB，请先缩小');
+        }
+        bytes = imageBytes;
+        name = picked['name'] as String? ?? '相册图片';
+      } else {
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'],
+          withData: false,
+        );
+        if (result == null || _disposed) return;
+        final file = result.files.single;
+        if (file.size > 25 * 1024 * 1024) {
+          throw const FormatException('图片超过 25 MB，请先缩小');
+        }
+        bytes = file.bytes ?? await File(file.path!).readAsBytes();
+        name = file.name;
       }
-      final bytes = file.bytes ?? await File(file.path!).readAsBytes();
       if (_disposed) return;
       source = bytes;
       crop = null;
-      imageName = file.name;
+      imageName = name;
+      previewRotation = 0;
       settings = settings.copyWith(rotation: 0);
       scheduleProcess(immediate: true);
     } catch (e) {

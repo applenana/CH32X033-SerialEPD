@@ -67,7 +67,7 @@ void main() {
         final out = processImage(
           ProcessRequest(
             Uint8List.fromList(img.encodePng(input)),
-            ImageSettings(mode: mode),
+            ImageSettings(mode: mode, strength: 1),
             width: 8,
             height: 4,
           ),
@@ -110,7 +110,12 @@ void main() {
     );
     for (final mode in DitherMode.values.where((m) => m != DitherMode.none)) {
       final out = processImage(
-        ProcessRequest(bytes, ImageSettings(mode: mode), width: 32, height: 16),
+        ProcessRequest(
+          bytes,
+          ImageSettings(mode: mode, strength: 1),
+          width: 32,
+          height: 16,
+        ),
       );
       expect(out.packed, isNot(plain.packed), reason: mode.name);
       expect(out.counts[0], greaterThan(0));

@@ -51,6 +51,21 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.text('墨屿'), findsOneWidget);
       expect(find.text('我的设备'), findsOneWidget);
+      if (size.width == 1440) {
+        await tester.tap(find.byTooltip('旋转预览框'));
+        await tester.pumpAndSettle();
+        expect(c.previewRotation, 1);
+        c.previewRotation = 0;
+        c.changed();
+      }
+      if (size.width == 390) {
+        expect(find.text('更多配置'), findsOneWidget);
+        expect(find.text('亮度'), findsNothing);
+        await tester.ensureVisible(find.text('更多配置'));
+        await tester.tap(find.text('更多配置'));
+        await tester.pumpAndSettle();
+        expect(find.text('亮度'), findsOneWidget);
+      }
       if (size.width == 1440 || size.width == 390) {
         await tester.runAsync(() async {
           final boundary =
