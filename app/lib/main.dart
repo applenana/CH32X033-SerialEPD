@@ -603,81 +603,80 @@ class _StudioPageState extends State<StudioPage> {
           ],
         ),
         const SizedBox(height: 20),
-        Container(
-          padding: EdgeInsets.all(mobile ? 12 : 24),
-          decoration: BoxDecoration(
-            color: const Color(0xffe7e9e7),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: AspectRatio(
-            aspectRatio: c.previewRotation.isEven ? 1448 / 1086 : 1086 / 1448,
-            child: RotatedBox(
-              quarterTurns: c.previewRotation,
-              child: LayoutBuilder(
-                builder: (context, bounds) => Container(
-                  key: const ValueKey('device-frame-preview'),
-                  foregroundDecoration: const BoxDecoration(
-                    image: DecorationImage(
-                      image: AssetImage('assets/device_frame.png'),
-                      fit: BoxFit.fill,
-                      filterQuality: FilterQuality.high,
+        AspectRatio(
+          // The source asset includes transparent margins around the frame.
+          // Lay out the visible device-and-cable bounds edge to edge.
+          aspectRatio: c.previewRotation.isEven ? 1384 / 765 : 765 / 1384,
+          child: RotatedBox(
+            quarterTurns: c.previewRotation,
+            child: LayoutBuilder(
+              builder: (context, bounds) => Container(
+                key: const ValueKey('device-frame-preview'),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Positioned(
+                      left: -bounds.maxWidth * (64 / 1384),
+                      top: -bounds.maxHeight * (150 / 765),
+                      width: bounds.maxWidth * (1448 / 1384),
+                      height: bounds.maxHeight * (1086 / 765),
+                      child: Image.asset(
+                        'assets/device_frame.png',
+                        fit: BoxFit.fill,
+                        filterQuality: FilterQuality.high,
+                      ),
                     ),
-                  ),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Positioned(
-                        left: bounds.maxWidth * (158 / 1448),
-                        top: bounds.maxHeight * (236 / 1086),
-                        width: bounds.maxWidth * (980 / 1448),
-                        height: bounds.maxHeight * (598 / 1086),
-                        child: ClipRect(
-                          child: c.image == null
-                              ? const ColoredBox(
-                                  color: Color(0xfff4f5f1),
-                                  child: Center(
-                                    child: Icon(
-                                      Icons.landscape_outlined,
-                                      color: muted,
-                                      size: 56,
-                                    ),
-                                  ),
-                                )
-                              : InteractiveViewer(
-                                  minScale: 1,
-                                  maxScale: 5,
-                                  child: Image.memory(
-                                    c.showOriginal
-                                        ? c.image!.original
-                                        : c.image!.preview,
-                                    gaplessPlayback: true,
-                                    filterQuality: FilterQuality.medium,
-                                    fit: BoxFit.cover,
+                    Positioned(
+                      left: bounds.maxWidth * (94 / 1384),
+                      top: bounds.maxHeight * (86 / 765),
+                      width: bounds.maxWidth * (980 / 1384),
+                      height: bounds.maxHeight * (598 / 765),
+                      child: ClipRect(
+                        child: c.image == null
+                            ? const ColoredBox(
+                                color: Color(0xfff4f5f1),
+                                child: Center(
+                                  child: Icon(
+                                    Icons.landscape_outlined,
+                                    color: muted,
+                                    size: 56,
                                   ),
                                 ),
-                        ),
+                              )
+                            : InteractiveViewer(
+                                minScale: 1,
+                                maxScale: 5,
+                                child: Image.memory(
+                                  c.showOriginal
+                                      ? c.image!.original
+                                      : c.image!.preview,
+                                  gaplessPlayback: true,
+                                  filterQuality: FilterQuality.medium,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
                       ),
-                      if (c.processing)
-                        Align(
-                          alignment: Alignment.topCenter,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 8,
-                            ),
-                            margin: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: .94),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: const Text(
-                              '正在生成四色预览…',
-                              style: TextStyle(fontSize: 11, color: ink),
-                            ),
+                    ),
+                    if (c.processing)
+                      Align(
+                        alignment: Alignment.topCenter,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
+                          margin: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: .94),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text(
+                            '正在生成四色预览…',
+                            style: TextStyle(fontSize: 11, color: ink),
                           ),
                         ),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
               ),
             ),
