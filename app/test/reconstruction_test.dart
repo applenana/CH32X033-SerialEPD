@@ -309,4 +309,25 @@ void main() {
       throwsArgumentError,
     );
   });
+  test('Crop processing bounds high-resolution source buffers', () {
+    final source = img.Image(width: 3600, height: 2400, numChannels: 3);
+    img.fill(source, color: img.ColorRgb8(190, 90, 40));
+    final bytes = Uint8List.fromList(img.encodeJpg(source, quality: 70));
+
+    final decoded = decodeSource(bytes);
+    expect(decoded.width * decoded.height, lessThanOrEqualTo(6_000_000));
+    expect(decoded.width / decoded.height, closeTo(1.5, .002));
+
+    final result = processImage(
+      ProcessRequest(
+        bytes,
+        const ImageSettings(mode: DitherMode.none),
+        width: 40,
+        height: 30,
+        crop: const CropSpec(left: .1, top: .1, right: .9, bottom: .9),
+      ),
+    );
+    expect(result.indices, hasLength(40 * 30));
+    expect(result.preview, isNotEmpty);
+  });
 }

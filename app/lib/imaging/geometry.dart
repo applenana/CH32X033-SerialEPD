@@ -26,7 +26,7 @@ class CropSpec {
       height > 0;
 }
 
-img.Image decodeSource(Uint8List data) {
+img.Image decodeSource(Uint8List data, {int maxPixels = 6_000_000}) {
   if (data.length > 25 * 1024 * 1024) {
     throw const FormatException('图片文件超过 25 MB，请先缩小');
   }
@@ -40,8 +40,21 @@ img.Image decodeSource(Uint8List data) {
       info.width * info.height > 24000000) {
     throw const FormatException('图片超过 2400 万像素或尺寸无效');
   }
-  final decoded = decoder!.decodeFrame(0);
+  var decoded = decoder!.decodeFrame(0);
   if (decoded == null) throw const FormatException('图片解码失败');
+  // Processing only needs a few source samples per panel pixel. Shrink before
+  // orientation baking so a phone-sized original does not keep several full
+  // resolution buffers alive during crop confirmation.
+  final pixels = decoded.width * decoded.height;
+  if (maxPixels > 0 && pixels > maxPixels) {
+    final scale = math.sqrt(maxPixels / pixels);
+    decoded = img.copyResize(
+      decoded,
+      width: math.max(1, (decoded.width * scale).round()),
+      height: math.max(1, (decoded.height * scale).round()),
+      interpolation: img.Interpolation.average,
+    );
+  }
   return img.bakeOrientation(decoded);
 }
 
