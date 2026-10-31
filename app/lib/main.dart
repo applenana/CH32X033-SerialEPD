@@ -1052,8 +1052,40 @@ class _StudioPageState extends State<StudioPage> {
       ),
     ],
   );
+  Future<void> _choosePanel() async {
+    if (!mounted || c.transferring || !c.connected || !c.fresh) return;
+    final value = await showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('选择屏幕批次'),
+        content: RadioGroup<int>(
+          groupValue: c.panel,
+          onChanged: (value) => Navigator.pop(context, value),
+          child: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RadioListTile<int>(value: 0, title: Text('A0 批次')),
+              RadioListTile<int>(value: 1, title: Text('A1 批次')),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+        ],
+      ),
+    );
+    if (value != null && mounted) c.selectPanel(value);
+  }
+
   Widget _sendButton() => FilledButton.icon(
-    onPressed: c.canSend ? c.send : null,
+    onPressed: c.canSend
+        ? c.send
+        : c.connected && c.fresh && !c.transferring && c.panel == null
+        ? _choosePanel
+        : null,
     icon: const Icon(Icons.send_rounded, size: 18),
     label: Text(
       c.transferring
