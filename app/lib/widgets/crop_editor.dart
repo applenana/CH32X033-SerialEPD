@@ -150,7 +150,21 @@ class _CropEditorState extends State<CropEditor> {
 
   @override
   void dispose() {
-    image?.dispose();
+    // The Windows raster thread can still be painting the last frame while
+    // Navigator removes this route. Releasing the native image immediately
+    // races that paint and can crash in flutter_windows.dll. Keep the image
+    // alive through the route transition, then release it after three frames.
+    final preview = image;
+    image = null;
+    if (preview != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            preview.dispose();
+          });
+        });
+      });
+    }
     transform.dispose();
     super.dispose();
   }

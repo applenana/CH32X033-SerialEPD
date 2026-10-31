@@ -1,5 +1,6 @@
 package io.serialepd.ink_studio
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -29,12 +30,25 @@ class MainActivity : FlutterActivity() {
                 val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     Intent(MediaStore.ACTION_PICK_IMAGES).apply { type = "image/*" }
                 } else {
-                    Intent(Intent.ACTION_GET_CONTENT).apply {
+                    // ACTION_GET_CONTENT opens a document/file picker on many
+                    // devices. ACTION_PICK targets the user's gallery app.
+                    Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI).apply {
                         type = "image/*"
-                        addCategory(Intent.CATEGORY_OPENABLE)
                     }
                 }
-                startActivityForResult(intent, 4102)
+                try {
+                    startActivityForResult(intent, 4102)
+                } catch (_: ActivityNotFoundException) {
+                    // A few AOSP builds have no gallery app; retain a usable
+                    // fallback without changing the normal gallery behavior.
+                    startActivityForResult(
+                        Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            type = "image/*"
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                        },
+                        4102,
+                    )
+                }
             }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "io.serialepd/power")
