@@ -1080,9 +1080,24 @@ class _StudioPageState extends State<StudioPage> {
     if (value != null && mounted) c.selectPanel(value);
   }
 
+  Future<void> _connectFromSend() async {
+    if (!mounted || c.transferring || c.connected || !c.fresh) return;
+    await c.scan();
+    if (!mounted || c.ports.isEmpty) {
+      if (mounted && c.ports.isEmpty) {
+        c.notice = '未找到 USB 设备，请检查连接和 OTG';
+        c.changed();
+      }
+      return;
+    }
+    await c.connect();
+  }
+
   Widget _sendButton() => FilledButton.icon(
     onPressed: c.canSend
         ? c.send
+        : !c.connected && c.fresh && !c.transferring
+        ? _connectFromSend
         : c.connected && c.fresh && !c.transferring && c.panel == null
         ? _choosePanel
         : null,
