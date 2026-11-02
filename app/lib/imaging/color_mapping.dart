@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
-import 'reconstruction.dart' show linearLight;
+import 'reconstruction.dart' show linearLight, srgbFromLinear;
 
 // Inspired by the smooth neutral/cool protection in ink-nfc-lab's
 // ResearchQuantizer.java. This is a BWYR-specific implementation: mix toward
@@ -11,8 +11,7 @@ double _smooth(double low, double high, double value) {
   return t * t * (3 - 2 * t);
 }
 
-double _encode(double c) =>
-    c <= .0031308 ? 12.92 * c : 1.055 * math.pow(c, 1 / 2.4).toDouble() - .055;
+double _encode(double c) => srgbFromLinear(c);
 
 /// Confidence that source chroma should receive red/yellow ink. Evaluate on
 /// the unquantized source, never on pixels polluted by diffusion errors.

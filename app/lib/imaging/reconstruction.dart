@@ -23,6 +23,27 @@ double linearLight(double c) {
   return _linearLut[(c * _linearLutSize).round()];
 }
 
+const _srgbLutSize = 16384;
+final _srgbLut = List<double>.generate(_srgbLutSize + 1, (i) {
+  final c = i / _srgbLutSize;
+  return c <= .0031308
+      ? 12.92 * c
+      : 1.055 * math.pow(c, 1 / 2.4).toDouble() - .055;
+}, growable: false);
+
+/// Linear-light RGB to sRGB using a shared lookup table. The image pipeline
+/// calls this for every channel, so avoiding a pow() in the hot path matters
+/// on both the Dart VM and Flutter AOT.
+double srgbFromLinear(double c) {
+  if (c <= 0) return 0;
+  if (c >= 1) return 1;
+  final position = c * _srgbLutSize;
+  final index = position.floor();
+  final fraction = position - index;
+  return _srgbLut[index] * (1 - fraction) +
+      _srgbLut[index + 1] * fraction;
+}
+
 final _cubeRootLut = List<double>.generate(
   _linearLutSize + 1,
   (i) => math.pow(i / _linearLutSize, 1 / 3).toDouble(),
@@ -82,7 +103,7 @@ class _Kernel {
   final int radius;
   final List<double> line;
   late final int size = line.length;
-  late final Float64List square = Float64List.fromList([
+  late final Float32List square = Float32List.fromList([
     for (final y in line)
       for (final x in line) y * x,
   ]);
@@ -109,9 +130,9 @@ _Kernel _correlation(double sigma) {
   return _Kernel(2 * r, line);
 }
 
-Float64List _correlate(Float64List input, int w, int h, _Kernel k) {
-  final tmp = Float64List(input.length),
-      out = Float64List(input.length),
+Float32List _correlate(Float32List input, int w, int h, _Kernel k) {
+  final tmp = Float32List(input.length),
+      out = Float32List(input.length),
       r = k.radius;
   final xStart = List<int>.generate(w, (x) => math.max(-r, -x));
   final xEnd = List<int>.generate(w, (x) => math.min(r, w - 1 - x));
@@ -358,7 +379,7 @@ Reconstruction reconstruct(
       indices = Uint8List(n),
       pinned = Uint8List(n),
       allowed = Uint8List(n),
-      target = Float64List(n * 3);
+      target = Float32List(n * 3);
   final inkLinear = inks
       .map((v) => [linearLight(v[0]), linearLight(v[1]), linearLight(v[2])])
       .toList();
@@ -433,9 +454,18 @@ Reconstruction reconstruct(
   final lum = _correlation(.55 + .30 * softness),
       chroma = _correlation(.85 + .50 * softness);
   final ks = [lum, chroma, chroma];
+  final xStarts = <List<int>>[], xEnds = <List<int>>[];
+  final yStarts = <List<int>>[], yEnds = <List<int>>[];
+  for (final k in ks) {
+    final r = k.radius;
+    xStarts.add(List<int>.generate(w, (x) => math.max(-r, -x)));
+    xEnds.add(List<int>.generate(w, (x) => math.min(r, w - 1 - x)));
+    yStarts.add(List<int>.generate(h, (y) => math.max(-r, -y)));
+    yEnds.add(List<int>.generate(h, (y) => math.min(r, h - 1 - y)));
+  }
   final error = List.generate(
     3,
-    (ch) => Float64List.fromList([
+    (ch) => Float32List.fromList([
       for (var i = 0; i < n; i++)
         inkOpponent[indices[i]][ch] - target[i * 3 + ch],
     ]),
@@ -482,10 +512,9 @@ Reconstruction reconstruct(
       final delta = a[ch] * sign;
       if (delta == 0) continue;
       final k = ks[ch], r = k.radius, buffer = corr[ch];
-      for (var dy = math.max(-r, -y); dy <= math.min(r, h - 1 - y); dy++) {
-        final start = math.max(-r, -x),
-            end = math.min(r, w - 1 - x),
-            base = (y + dy) * w + x,
+      final start = xStarts[ch][x], end = xEnds[ch][x];
+      for (var dy = yStarts[ch][y]; dy <= yEnds[ch][y]; dy++) {
+        final base = (y + dy) * w + x,
             kbase = (dy + r) * k.size + r;
         for (var dx = start; dx <= end; dx++) {
           buffer[base + dx] += delta * k.square[kbase + dx];

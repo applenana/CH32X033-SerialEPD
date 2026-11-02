@@ -240,8 +240,7 @@ const _divisors = <DitherMode, int>{
 };
 
 double _linear(double c) => linearLight(c);
-double _encodeLinear(double c) =>
-    c <= .0031308 ? 12.92 * c : 1.055 * math.pow(c, 1 / 2.4).toDouble() - .055;
+double _encodeLinear(double c) => srgbFromLinear(c);
 double _adjustChannel(double source, double luminance, ImageSettings s) {
   var v = luminance + (source - luminance) * s.saturation;
   v = ((v - .5) * s.contrast + .5 + s.brightness).clamp(0, 1);
@@ -316,7 +315,101 @@ class PreparedImage {
   final Float32List rgb;
   final Uint8List original;
   final int width, height;
-  const PreparedImage(this.rgb, this.original, this.width, this.height);
+  Float32List? _adjustedRgb;
+  NaturalMapping? _natural;
+  String? _adjustmentKey;
+  PreparedImage(this.rgb, this.original, this.width, this.height);
+}
+
+String _adjustmentKey(ImageSettings s) =>
+    '${s.brightness}|${s.contrast}|${s.saturation}|${s.gamma}|'
+    '${s.dynamicRange}|${s.naturalMapping}';
+
+({Float32List rgb, NaturalMapping? natural}) _adjustedImage(
+  PreparedImage prepared,
+  ImageSettings s,
+) {
+  final key = _adjustmentKey(s);
+  if (prepared._adjustmentKey == key && prepared._adjustedRgb != null) {
+    return (rgb: prepared._adjustedRgb!, natural: prepared._natural);
+  }
+  final w = prepared.width, h = prepared.height;
+  final rgb = Float32List(prepared.rgb.length);
+  for (var i = 0; i < w * h; i++) {
+    final at = i * 3;
+    final l =
+        .2126 * prepared.rgb[at] +
+        .7152 * prepared.rgb[at + 1] +
+        .0722 * prepared.rgb[at + 2];
+    var lr = _adjustChannel(prepared.rgb[at], l, s);
+    var lg = _adjustChannel(prepared.rgb[at + 1], l, s);
+    var lb = _adjustChannel(prepared.rgb[at + 2], l, s);
+    if (s.dynamicRange > 0) {
+      final y = .2126 * lr + .7152 * lg + .0722 * lb;
+      final amount = s.dynamicRange.clamp(0.0, 1.0);
+      final tone = math.sqrt(y);
+      final mappedTone =
+          tone + amount * .6 * tone * (1 - tone) * (1 - 2 * tone);
+      final targetY = mappedTone * mappedTone;
+      var scale = y < 1e-10 ? 1.0 : targetY / y;
+      if (lr > y) scale = math.min(scale, (1 - targetY) / (lr - y));
+      if (lg > y) scale = math.min(scale, (1 - targetY) / (lg - y));
+      if (lb > y) scale = math.min(scale, (1 - targetY) / (lb - y));
+      lr = (targetY + (lr - y) * scale).clamp(0.0, 1.0);
+      lg = (targetY + (lg - y) * scale).clamp(0.0, 1.0);
+      lb = (targetY + (lb - y) * scale).clamp(0.0, 1.0);
+    }
+    rgb[at] = _encodeLinear(lr).clamp(0.0, 1.0);
+    rgb[at + 1] = _encodeLinear(lg).clamp(0.0, 1.0);
+    rgb[at + 2] = _encodeLinear(lb).clamp(0.0, 1.0);
+  }
+  final natural = s.naturalMapping > 0
+      ? applyNaturalMapping(rgb, s.naturalMapping)
+      : null;
+  prepared._adjustedRgb = rgb;
+  prepared._natural = natural;
+  prepared._adjustmentKey = key;
+  return (rgb: rgb, natural: natural);
+}
+
+int _nearestColorFast(
+  double r,
+  double g,
+  double b,
+  bool perceptual, {
+  double chromaPenalty = 0,
+  bool monochrome = false,
+  required List<double> colors,
+  required List<double> labColors,
+}) {
+  var p0 = r, p1 = g, p2 = b;
+  if (perceptual) {
+    r = linearLight(r);
+    g = linearLight(g);
+    b = linearLight(b);
+    final l = cubeRoot(.4122214708 * r + .5363325363 * g + .0514459929 * b);
+    final m = cubeRoot(.2119034982 * r + .6806995451 * g + .1073969566 * b);
+    final q = cubeRoot(.0883024619 * r + .2817188376 * g + .6299787005 * b);
+    p0 = .2104542553 * l + .793617785 * m - .0040720468 * q;
+    p1 = 1.9779984951 * l - 2.428592205 * m + .4505937099 * q;
+    p2 = .0259040371 * l + .7827717662 * m - .808675766 * q;
+  }
+  var best = double.infinity, index = 0;
+  final chromaWeight = perceptual ? 4.0 : 1.0;
+  for (var i = 0; i < 4; i++) {
+    if (monochrome && i >= 2) continue;
+    final base = i * 3;
+    final metrics = perceptual ? labColors : colors;
+    final c0 = metrics[base], c1 = metrics[base + 1], c2 = metrics[base + 2];
+    final a = p0 - c0, d = p1 - c1, e = p2 - c2;
+    final distance =
+        a * a + chromaWeight * (d * d + e * e) + (i >= 2 ? chromaPenalty : 0);
+    if (distance < best) {
+      best = distance;
+      index = i;
+    }
+  }
+  return index;
 }
 
 /// Runs in a background isolate; no Flutter widgets or native plugins.
@@ -409,45 +502,20 @@ ProcessedImage processPrepared(
 }) {
   final clock = Stopwatch()..start();
   final w = prepared.width, h = prepared.height;
-  final rgb = Float32List(prepared.rgb.length);
+  final adjusted = _adjustedImage(prepared, s);
+  // Diffusion modifies its working buffer. DBS and blue-noise only read it,
+  // so they can use the cached adjusted image directly.
+  final rgb = s.mode == DitherMode.perceptual || s.mode == DitherMode.blueNoise
+      ? adjusted.rgb
+      : Float32List.fromList(adjusted.rgb);
   final inks = effectivePalette(s);
-  final labInks = inks.map((c) => _oklab(c[0], c[1], c[2])).toList();
-  for (var i = 0; i < w * h; i++) {
-    final at = i * 3;
-    final l =
-        .2126 * prepared.rgb[at] +
-        .7152 * prepared.rgb[at + 1] +
-        .0722 * prepared.rgb[at + 2];
-    // Keep this hot loop scalar. Creating a temporary List for every pixel is
-    // particularly expensive on Android's Dart VM and adds GC pauses.
-    var lr = _adjustChannel(prepared.rgb[at], l, s);
-    var lg = _adjustChannel(prepared.rgb[at + 1], l, s);
-    var lb = _adjustChannel(prepared.rgb[at + 2], l, s);
-    if (s.dynamicRange > 0) {
-      // Shadow lift + highlight roll-off around the original luminance. This
-      // preserves midtones and hue instead of flattening every RGB channel.
-      final y = .2126 * lr + .7152 * lg + .0722 * lb;
-      final amount = s.dynamicRange.clamp(0.0, 1.0);
-      final tone = math.sqrt(y);
-      final mappedTone =
-          tone + amount * .6 * tone * (1 - tone) * (1 - 2 * tone);
-      final targetY = mappedTone * mappedTone;
-      var scale = y < 1e-10 ? 1.0 : targetY / y;
-      if (lr > y) scale = math.min(scale, (1 - targetY) / (lr - y));
-      if (lg > y) scale = math.min(scale, (1 - targetY) / (lg - y));
-      if (lb > y) scale = math.min(scale, (1 - targetY) / (lb - y));
-      lr = (targetY + (lr - y) * scale).clamp(0.0, 1.0);
-      lg = (targetY + (lg - y) * scale).clamp(0.0, 1.0);
-      lb = (targetY + (lb - y) * scale).clamp(0.0, 1.0);
-    }
-    rgb[at] = _encodeLinear(lr).clamp(0.0, 1.0);
-    rgb[at + 1] = _encodeLinear(lg).clamp(0.0, 1.0);
-    rgb[at + 2] = _encodeLinear(lb).clamp(0.0, 1.0);
-  }
-  // A zero setting takes the original path without round-trip color changes.
-  final natural = s.naturalMapping > 0
-      ? applyNaturalMapping(rgb, s.naturalMapping)
-      : null;
+  final colors = <double>[
+    for (final c in inks) ...c,
+  ];
+  final labColors = <double>[
+    for (final c in inks) ..._oklab(c[0], c[1], c[2]),
+  ];
+  final natural = adjusted.natural;
   final indices = Uint8List(w * h), counts = List.filled(4, 0);
   final output = img.Image(width: w, height: h, numChannels: 3);
   if (s.mode == DitherMode.perceptual || s.mode == DitherMode.blueNoise) {
@@ -489,6 +557,8 @@ ProcessedImage processPrepared(
   }
   final kernel = _kernels[s.mode];
   final divisor = (_divisors[s.mode] ?? 1).toDouble();
+  final protection = natural?.protection;
+  final neutral = natural?.neutral;
   for (var y = 0; y < h; y++) {
     final reverse = s.serpentine && y.isOdd && kernel != null;
     for (var step = 0; step < w; step++) {
@@ -496,18 +566,19 @@ ProcessedImage processPrepared(
       final r = rgb[at].clamp(0.0, 1.0),
           g = rgb[at + 1].clamp(0.0, 1.0),
           b = rgb[at + 2].clamp(0.0, 1.0);
-      final index = nearestColor(
+      final pixel = y * w + x;
+      final index = _nearestColorFast(
         r,
         g,
         b,
         s.perceptual,
-        chromaPenalty: .25 * (natural?.protection[y * w + x] ?? 0),
-        monochrome: natural?.neutral[y * w + x] == 1,
-        colors: inks,
-        labColors: labInks,
+        chromaPenalty: .25 * (protection?[pixel] ?? 0),
+        monochrome: neutral?[pixel] == 1,
+        colors: colors,
+        labColors: labColors,
       );
       final color = inks[index];
-      indices[y * w + x] = index;
+      indices[pixel] = index;
       counts[index]++;
       output.setPixelRgb(
         x,
@@ -526,7 +597,8 @@ ProcessedImage processPrepared(
               amount = weight[2] / divisor * s.strength;
           // Preserve encoded-RGB error luminance while reducing color leakage
           // into neutral/cool neighbors. The original kernels are unchanged.
-          final retain = 1 - (natural?.protection[ny * w + nx] ?? 0);
+          final neighbor = ny * w + nx;
+          final retain = 1 - (protection?[neighbor] ?? 0);
           final tr = natural == null
               ? er
               : luminanceError + (er - luminanceError) * retain;
