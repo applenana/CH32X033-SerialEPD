@@ -113,41 +113,69 @@ Float64List _correlate(Float64List input, int w, int h, _Kernel k) {
   return out;
 }
 
-List<double> _solvePaletteWeights(List<double> point, List<List<double>> inks) {
+class _PaletteBasis {
+  final List<List<double>> inverse;
+  const _PaletteBasis(this.inverse);
+
+  List<double> solve(double r, double g, double b) => [
+    for (var row = 0; row < 4; row++)
+      inverse[row][0] * r +
+          inverse[row][1] * g +
+          inverse[row][2] * b +
+          inverse[row][3],
+  ];
+}
+
+_PaletteBasis _makePaletteBasis(List<List<double>> inks) {
   final a = List.generate(
     4,
     (row) => [
       for (var col = 0; col < 4; col++) row == 3 ? 1.0 : inks[col][row],
+      for (var col = 0; col < 4; col++) row == col ? 1.0 : 0.0,
     ],
   );
-  final b = [...point, 1.0];
   for (var col = 0; col < 4; col++) {
     var pivot = col;
     for (var row = col + 1; row < 4; row++) {
       if (a[row][col].abs() > a[pivot][col].abs()) pivot = row;
     }
-    if (a[pivot][col].abs() < 1e-8) return const [1, 0, 0, 0];
+    if (a[pivot][col].abs() < 1e-8) {
+      return const _PaletteBasis([
+        [1, 0, 0, 0],
+        [0, 1, 0, 0],
+        [0, 0, 1, 0],
+        [0, 0, 0, 1],
+      ]);
+    }
     final tmp = a[col];
     a[col] = a[pivot];
     a[pivot] = tmp;
-    final bv = b[col];
-    b[col] = b[pivot];
-    b[pivot] = bv;
     final div = a[col][col];
-    for (var j = col; j < 4; j++) {
+    for (var j = 0; j < 8; j++) {
       a[col][j] /= div;
     }
-    b[col] /= div;
     for (var row = 0; row < 4; row++) {
       if (row == col) continue;
       final f = a[row][col];
-      for (var j = col; j < 4; j++) {
+      for (var j = 0; j < 8; j++) {
         a[row][j] -= f * a[col][j];
       }
-      b[row] -= f * b[col];
     }
   }
-  return b;
+  return _PaletteBasis(a.map((row) => row.sublist(4)).toList());
+}
+
+List<double> _solvePaletteWeights(
+  List<double> point,
+  List<List<double>> inks, [
+  _PaletteBasis? basis,
+]) {
+  final solved = (basis ?? _makePaletteBasis(inks)).solve(
+    point[0],
+    point[1],
+    point[2],
+  );
+  return solved;
 }
 
 List<double> paletteCoverage(List<double> point, List<List<double>> inks) {
@@ -158,6 +186,36 @@ List<double> paletteCoverage(List<double> point, List<List<double>> inks) {
   final sum = weights.fold(0.0, (a, b) => a + b);
   if (sum <= 1e-8) return [1, 0, 0, 0];
   return weights.map((v) => v / sum).toList();
+}
+
+List<double> _coverageWithBasis(
+  double r,
+  double g,
+  double b,
+  _PaletteBasis basis,
+) {
+  final weights = basis.solve(r, g, b).map((v) => math.max(0, v)).toList();
+  final sum = weights[0] + weights[1] + weights[2] + weights[3];
+  if (sum <= 1e-8) return [1, 0, 0, 0];
+  return [
+    weights[0] / sum,
+    weights[1] / sum,
+    weights[2] / sum,
+    weights[3] / sum,
+  ];
+}
+
+/// Reusable color mapper for a fixed measured palette. AUTO and batch tools
+/// should keep one instance instead of rebuilding the 4x4 inverse per pixel.
+class PaletteProjector {
+  final List<List<double>> inks;
+  final double compression;
+  final _PaletteBasis _basis;
+  PaletteProjector(this.inks, this.compression)
+    : _basis = _makePaletteBasis(inks);
+
+  List<double> map(double r, double g, double b) =>
+      _projectToPaletteWithBasis(r, g, b, inks, compression, _basis);
 }
 
 double _luminance(List<double> c) => .2126 * c[0] + .7152 * c[1] + .0722 * c[2];
@@ -171,8 +229,19 @@ List<double> projectToPalette(
   List<List<double>> inks,
   double compression,
 ) {
+  return PaletteProjector(inks, compression).map(r, g, b);
+}
+
+List<double> _projectToPaletteWithBasis(
+  double r,
+  double g,
+  double b,
+  List<List<double>> inks,
+  double compression,
+  _PaletteBasis basis,
+) {
   final original = [r, g, b];
-  final raw = _solvePaletteWeights(original, inks);
+  final raw = basis.solve(r, g, b);
   if (raw.every((v) => v >= -1e-10)) return original;
   final levels = inks.map(_luminance).toList();
   var low = 0, high = 0;
@@ -181,7 +250,7 @@ List<double> projectToPalette(
     if (levels[i] > levels[high]) high = i;
   }
   final y = _luminance(original).clamp(levels[low], levels[high]);
-  final weights = paletteCoverage(original, inks);
+  final weights = _coverageWithBasis(r, g, b, basis);
   final currentY = List.generate(
     4,
     (i) => weights[i] * levels[i],
@@ -244,6 +313,7 @@ Reconstruction reconstruct(
   final inkLinear = inks
       .map((v) => [linearLight(v[0]), linearLight(v[1]), linearLight(v[2])])
       .toList();
+  final paletteBasis = _makePaletteBasis(inkLinear);
   final inkOpponent = inkLinear.map((v) => opponent(v[0], v[1], v[2])).toList();
   for (var i = 0; i < n; i++) {
     final r = rgb[i * 3].clamp(0.0, 1.0),
@@ -269,8 +339,20 @@ Reconstruction reconstruct(
       target.setRange(i * 3, i * 3 + 3, inkOpponent[exact]);
       continue;
     }
-    final mapped = projectToPalette(lr, lg, lb, inkLinear, gamutCompression);
-    final weights = paletteCoverage(mapped, inkLinear);
+    final mapped = _projectToPaletteWithBasis(
+      lr,
+      lg,
+      lb,
+      inkLinear,
+      gamutCompression,
+      paletteBasis,
+    );
+    final weights = _coverageWithBasis(
+      mapped[0],
+      mapped[1],
+      mapped[2],
+      paletteBasis,
+    );
     for (var j = 0; j < 4; j++) {
       if (weights[j] > 1e-7) allowed[i] |= 1 << j;
     }

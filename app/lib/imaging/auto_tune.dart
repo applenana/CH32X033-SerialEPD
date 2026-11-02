@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'processor.dart';
-import 'reconstruction.dart' show linearLight, projectGamut, projectToPalette;
+import 'reconstruction.dart' show PaletteProjector, linearLight, projectGamut;
 
 /// Local heuristic search, not a trained model or a calibrated vision metric.
 /// Each candidate is assessed at panel resolution against ONE fixed original.
@@ -109,13 +109,22 @@ class AutoReference {
     this.inkFraction,
   );
 
-  factory AutoReference(PreparedImage image, {List<List<double>> palette = const [
-    [0, 0, 0], [1, 1, 1], [1, 1, 0], [1, 0, 0],
-  ], double gamutCompression = 0, bool useIdealGamut = false}) {
+  factory AutoReference(
+    PreparedImage image, {
+    List<List<double>> palette = const [
+      [0, 0, 0],
+      [1, 1, 1],
+      [1, 1, 0],
+      [1, 0, 0],
+    ],
+    double gamutCompression = 0,
+    bool useIdealGamut = false,
+  }) {
     final w = image.width, h = image.height, n = w * h;
     final linearPalette = palette
         .map((c) => [linearLight(c[0]), linearLight(c[1]), linearLight(c[2])])
         .toList();
+    final projector = PaletteProjector(linearPalette, gamutCompression);
     final target = List.generate(3, (_) => Float32List(n));
     final lum = Float32List(n), rawY = Float32List(n), squared = Float32List(n);
     final neutral = Uint8List(n),
@@ -129,7 +138,7 @@ class AutoReference {
       final lr = linearLight(r), lg = linearLight(g), lb = linearLight(b);
       final mapped = useIdealGamut
           ? projectGamut(lr, lg, lb)
-          : projectToPalette(lr, lg, lb, linearPalette, gamutCompression);
+          : projector.map(lr, lg, lb);
       for (var c = 0; c < 3; c++) {
         target[c][i] = mapped[c];
       }

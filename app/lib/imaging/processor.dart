@@ -234,6 +234,13 @@ double _linear(double c) =>
     c <= .04045 ? c / 12.92 : math.pow((c + .055) / 1.055, 2.4).toDouble();
 double _encodeLinear(double c) =>
     c <= .0031308 ? 12.92 * c : 1.055 * math.pow(c, 1 / 2.4).toDouble() - .055;
+double _adjustChannel(double source, double luminance, ImageSettings s) {
+  var v = luminance + (source - luminance) * s.saturation;
+  v = ((v - .5) * s.contrast + .5 + s.brightness).clamp(0, 1);
+  v = math.pow(v, 1 / s.gamma).toDouble();
+  return linearLight(v);
+}
+
 List<double> _oklab(double r, double g, double b) {
   r = _linear(r);
   g = _linear(g);
@@ -409,33 +416,31 @@ ProcessedImage processPrepared(
         .2126 * prepared.rgb[at] +
         .7152 * prepared.rgb[at + 1] +
         .0722 * prepared.rgb[at + 2];
-    final linear = <double>[];
-    for (var c = 0; c < 3; c++) {
-      var v = l + (prepared.rgb[at + c] - l) * s.saturation;
-      v = ((v - .5) * s.contrast + .5 + s.brightness).clamp(0, 1);
-      v = math.pow(v, 1 / s.gamma).toDouble();
-      linear.add(linearLight(v));
-    }
+    // Keep this hot loop scalar. Creating a temporary List for every pixel is
+    // particularly expensive on Android's Dart VM and adds GC pauses.
+    var lr = _adjustChannel(prepared.rgb[at], l, s);
+    var lg = _adjustChannel(prepared.rgb[at + 1], l, s);
+    var lb = _adjustChannel(prepared.rgb[at + 2], l, s);
     if (s.dynamicRange > 0) {
       // Shadow lift + highlight roll-off around the original luminance. This
       // preserves midtones and hue instead of flattening every RGB channel.
-      final y = .2126 * linear[0] + .7152 * linear[1] + .0722 * linear[2];
+      final y = .2126 * lr + .7152 * lg + .0722 * lb;
       final amount = s.dynamicRange.clamp(0.0, 1.0);
       final tone = math.sqrt(y);
       final mappedTone =
           tone + amount * .6 * tone * (1 - tone) * (1 - 2 * tone);
       final targetY = mappedTone * mappedTone;
       var scale = y < 1e-10 ? 1.0 : targetY / y;
-      for (final channel in linear) {
-        if (channel > y) scale = math.min(scale, (1 - targetY) / (channel - y));
-      }
-      for (var c = 0; c < 3; c++) {
-        linear[c] = (targetY + (linear[c] - y) * scale).clamp(0.0, 1.0);
-      }
+      if (lr > y) scale = math.min(scale, (1 - targetY) / (lr - y));
+      if (lg > y) scale = math.min(scale, (1 - targetY) / (lg - y));
+      if (lb > y) scale = math.min(scale, (1 - targetY) / (lb - y));
+      lr = (targetY + (lr - y) * scale).clamp(0.0, 1.0);
+      lg = (targetY + (lg - y) * scale).clamp(0.0, 1.0);
+      lb = (targetY + (lb - y) * scale).clamp(0.0, 1.0);
     }
-    for (var c = 0; c < 3; c++) {
-      rgb[at + c] = _encodeLinear(linear[c]).clamp(0.0, 1.0);
-    }
+    rgb[at] = _encodeLinear(lr).clamp(0.0, 1.0);
+    rgb[at + 1] = _encodeLinear(lg).clamp(0.0, 1.0);
+    rgb[at + 2] = _encodeLinear(lb).clamp(0.0, 1.0);
   }
   // A zero setting takes the original path without round-trip color changes.
   final natural = s.naturalMapping > 0
@@ -449,6 +454,10 @@ ProcessedImage processPrepared(
       w,
       h,
       optimize: s.mode == DitherMode.perceptual,
+      // DBS is a global neighbourhood search. One pass gives most of its
+      // visual benefit at panel resolution while keeping interactive edits in
+      // the one-second class on slower CPUs; small images retain full quality.
+      maxPasses: w * h > 100000 ? 1 : 3,
       softness: s.softness,
       paperWhite: s.paperWhite,
       // reconstruct performs the single sRGB -> linear conversion.
