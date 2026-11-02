@@ -48,7 +48,7 @@ void main() {
           defaults.saturation,
           defaults.strength,
         ],
-        [.1, 1.1, 1.1, 0],
+        [.1, 1.1, 1.1, 1],
       );
       expect(
         [defaults.gamma, defaults.softness, defaults.naturalMapping],
@@ -58,6 +58,12 @@ void main() {
         [defaults.softness, defaults.naturalMapping, defaults.paperWhite],
         [1, 1, 0],
       );
+      final explicitOldSetting = ImageSettings.fromJson({
+        'defaultsVersion': 2,
+        'mode': 'floyd',
+        'strength': 0,
+      });
+      expect(explicitOldSetting.strength, 0);
       final upgraded = ImageSettings.fromJson({
         'defaultsVersion': 1,
         'brightness': 0,
@@ -72,7 +78,7 @@ void main() {
           upgraded.saturation,
           upgraded.strength,
         ],
-        [.1, 1.1, 1.1, 0],
+        [.1, 1.1, 1.1, 1],
       );
     },
   );

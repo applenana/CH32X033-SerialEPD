@@ -40,7 +40,7 @@ class ImageSettings {
     this.contrast = 1.1,
     this.saturation = 1.1,
     this.gamma = 1,
-    this.strength = 0,
+    this.strength = 1,
     this.rotation = 0,
     this.cover = true,
     this.perceptual = true,
@@ -88,7 +88,7 @@ class ImageSettings {
     gamutCompression: gamutCompression ?? this.gamutCompression,
   );
   Map<String, dynamic> toJson() => {
-    'defaultsVersion': 2,
+    'defaultsVersion': 3,
     'mode': mode.name,
     'brightness': brightness,
     'contrast': contrast,
@@ -120,12 +120,16 @@ class ImageSettings {
       'bayer4' || 'bayer8' => 'blueNoise',
       final name => name,
     };
-    final currentDefaults = json['defaultsVersion'] == 2;
+    // Version 2 already represented a complete, user-editable settings
+    // record. Keep its explicit strength value (including zero); version 3
+    // only changes the fresh/reset default to full diffusion strength.
+    final currentDefaults =
+        json['defaultsVersion'] == 2 || json['defaultsVersion'] == 3;
     final previousDefaults = !currentDefaults;
     final brightness = value('brightness', .1, -.3, .3);
     final contrast = value('contrast', 1.1, .5, 1.8);
     final saturation = value('saturation', 1.1, 0, 2);
-    final strength = value('strength', 0, 0, 1);
+    final strength = value('strength', 1, 0, 1);
     return ImageSettings(
       mode:
           DitherMode.values.where((m) => m.name == modeName).firstOrNull ??
@@ -134,7 +138,7 @@ class ImageSettings {
       contrast: previousDefaults && contrast == 1 ? 1.1 : contrast,
       saturation: previousDefaults && saturation == 1 ? 1.1 : saturation,
       gamma: value('gamma', 1, .5, 2),
-      strength: previousDefaults && strength == 1 ? 0 : strength,
+      strength: strength,
       rotation: json['rotation'] is int ? (json['rotation'] as int) % 4 : 0,
       cover: currentDefaults ? json['cover'] != false : true,
       perceptual: json['perceptual'] != false,
