@@ -190,6 +190,21 @@ void main() {
       expect(result.indices.every((i) => i == 0 || i == 1), true);
     },
   );
+  test('Fast ideal-palette projection matches the generic projection', () {
+    const w = 48, h = 32;
+    final rgb = Float32List(w * h * 3);
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        final i = (y * w + x) * 3;
+        rgb[i] = (x * 7 + y * 3) % 97 / 96;
+        rgb[i + 1] = (x * 5 + y * 11) % 89 / 88;
+        rgb[i + 2] = (x * 13 + y * 2) % 83 / 82;
+      }
+    }
+    final fast = reconstruct(rgb, w, h);
+    final generic = reconstruct(rgb, w, h, gamutCompression: 1e-12);
+    expect(fast.indices, generic.indices);
+  });
   test('DBS monotonically improves its stated visual objective', () {
     const w = 48, h = 32;
     final rgb = Float32List(w * h * 3);

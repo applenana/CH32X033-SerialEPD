@@ -40,8 +40,7 @@ double srgbFromLinear(double c) {
   final position = c * _srgbLutSize;
   final index = position.floor();
   final fraction = position - index;
-  return _srgbLut[index] * (1 - fraction) +
-      _srgbLut[index + 1] * fraction;
+  return _srgbLut[index] * (1 - fraction) + _srgbLut[index + 1] * fraction;
 }
 
 final _cubeRootLut = List<double>.generate(
@@ -258,6 +257,21 @@ List<double> _coverageWithBasis(
   ];
 }
 
+bool _isIdealLinearPalette(List<List<double>> inks) =>
+    inks.length == 4 &&
+    inks[0][0] == 0 &&
+    inks[0][1] == 0 &&
+    inks[0][2] == 0 &&
+    inks[1][0] == 1 &&
+    inks[1][1] == 1 &&
+    inks[1][2] == 1 &&
+    inks[2][0] == 1 &&
+    inks[2][1] == 1 &&
+    inks[2][2] == 0 &&
+    inks[3][0] == 1 &&
+    inks[3][1] == 0 &&
+    inks[3][2] == 0;
+
 /// Reusable color mapper for a fixed measured palette. AUTO and batch tools
 /// should keep one instance instead of rebuilding the 4x4 inverse per pixel.
 class PaletteProjector {
@@ -384,6 +398,7 @@ Reconstruction reconstruct(
       .map((v) => [linearLight(v[0]), linearLight(v[1]), linearLight(v[2])])
       .toList();
   final paletteBasis = _makePaletteBasis(inkLinear);
+  final idealFast = gamutCompression <= 0 && _isIdealLinearPalette(inkLinear);
   final inkOpponent = inkLinear.map((v) => opponent(v[0], v[1], v[2])).toList();
   final levels = inkLinear.map(_luminance).toList();
   for (var i = 0; i < n; i++) {
@@ -410,23 +425,89 @@ Reconstruction reconstruct(
       target.setRange(i * 3, i * 3 + 3, inkOpponent[exact]);
       continue;
     }
-    final mapped = _projectToPaletteWithBasis(
-      lr,
-      lg,
-      lb,
-      inkLinear,
-      gamutCompression,
-      paletteBasis,
-      levels,
-    );
-    final weights = _coverageWithBasis(
-      mapped[0],
-      mapped[1],
-      mapped[2],
-      paletteBasis,
-    );
+    var mappedR = lr, mappedG = lg, mappedB = lb;
+    var weight0 = 0.0, weight1 = 0.0, weight2 = 0.0, weight3 = 0.0;
+    if (idealFast) {
+      // For the default BWYR simplex, the inverse matrix is the fixed
+      // barycentric transform [1-r, b, g-b, r-g]. Reproduce the generic
+      // projection's clipping and luminance correction without allocating
+      // lists or solving a 4x4 system for every pixel.
+      final raw0 = 1 - lr, raw1 = lb, raw2 = lg - lb, raw3 = lr - lg;
+      if (raw0 >= -1e-10 &&
+          raw1 >= -1e-10 &&
+          raw2 >= -1e-10 &&
+          raw3 >= -1e-10) {
+        weight0 = raw0;
+        weight1 = raw1;
+        weight2 = raw2;
+        weight3 = raw3;
+      } else {
+        weight0 = math.max(0, raw0);
+        weight1 = math.max(0, raw1);
+        weight2 = math.max(0, raw2);
+        weight3 = math.max(0, raw3);
+        final sum = weight0 + weight1 + weight2 + weight3;
+        if (sum <= 1e-8) {
+          weight0 = 1;
+          weight1 = weight2 = weight3 = 0;
+        } else {
+          weight0 /= sum;
+          weight1 /= sum;
+          weight2 /= sum;
+          weight3 /= sum;
+          final sourceY = .2126 * lr + .7152 * lg + .0722 * lb;
+          final currentY = weight1 + .9278 * weight2 + .2126 * weight3;
+          final endHigh = currentY < sourceY;
+          final delta = (endHigh ? 1.0 : 0.0) - currentY;
+          final correction = delta.abs() < 1e-12
+              ? 0.0
+              : ((sourceY - currentY) / delta).clamp(0.0, 1.0);
+          weight0 *= 1 - correction;
+          weight1 *= 1 - correction;
+          weight2 *= 1 - correction;
+          weight3 *= 1 - correction;
+          if (endHigh) {
+            weight1 += correction;
+          } else {
+            weight0 += correction;
+          }
+        }
+      }
+      mappedR = weight1 + weight2 + weight3;
+      mappedG = weight1 + weight2;
+      mappedB = weight1;
+    } else {
+      final mapped = _projectToPaletteWithBasis(
+        lr,
+        lg,
+        lb,
+        inkLinear,
+        gamutCompression,
+        paletteBasis,
+        levels,
+      );
+      mappedR = mapped[0];
+      mappedG = mapped[1];
+      mappedB = mapped[2];
+      final weights = _coverageWithBasis(
+        mappedR,
+        mappedG,
+        mappedB,
+        paletteBasis,
+      );
+      weight0 = weights[0];
+      weight1 = weights[1];
+      weight2 = weights[2];
+      weight3 = weights[3];
+    }
     for (var j = 0; j < 4; j++) {
-      if (weights[j] > 1e-7) allowed[i] |= 1 << j;
+      final weight = switch (j) {
+        0 => weight0,
+        1 => weight1,
+        2 => weight2,
+        _ => weight3,
+      };
+      if (weight > 1e-7) allowed[i] |= 1 << j;
     }
     // Sort along luminance: K,R,Y,W. One threshold for a convex mixture avoids
     // independent channel noise and cannot invent a fifth display color.
@@ -437,18 +518,19 @@ Reconstruction reconstruct(
         (blueNoiseSize * blueNoiseSize);
     var cumulative = 0.0, index = 1;
     for (final k in const [0, 3, 2, 1]) {
-      cumulative += weights[k];
+      cumulative += switch (k) {
+        0 => weight0,
+        1 => weight1,
+        2 => weight2,
+        _ => weight3,
+      };
       if (t < cumulative) {
         index = k;
         break;
       }
     }
     indices[i] = index;
-    target.setRange(
-      i * 3,
-      i * 3 + 3,
-      opponent(mapped[0], mapped[1], mapped[2]),
-    );
+    target.setRange(i * 3, i * 3 + 3, opponent(mappedR, mappedG, mappedB));
   }
   if (!optimize) return Reconstruction(indices, 0, 0, 0);
   final lum = _correlation(.55 + .30 * softness),
@@ -514,8 +596,7 @@ Reconstruction reconstruct(
       final k = ks[ch], r = k.radius, buffer = corr[ch];
       final start = xStarts[ch][x], end = xEnds[ch][x];
       for (var dy = yStarts[ch][y]; dy <= yEnds[ch][y]; dy++) {
-        final base = (y + dy) * w + x,
-            kbase = (dy + r) * k.size + r;
+        final base = (y + dy) * w + x, kbase = (dy + r) * k.size + r;
         for (var dx = start; dx <= end; dx++) {
           buffer[base + dx] += delta * k.square[kbase + dx];
         }
