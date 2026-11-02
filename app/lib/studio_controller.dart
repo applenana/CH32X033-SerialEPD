@@ -9,6 +9,7 @@ import 'imaging/processor.dart';
 import 'imaging/palette_calibration.dart';
 import 'imaging/geometry.dart';
 import 'imaging/auto_tune_job.dart';
+import 'imaging/process_worker.dart';
 import 'protocol/client.dart';
 import 'protocol/codec.dart';
 import 'transport/serial_transport.dart';
@@ -27,6 +28,7 @@ class StudioController extends ChangeNotifier {
   String? autoPhase, autoReport;
   double autoProgress = 0;
   AutoTuneJob? _autoJob;
+  final ImageProcessWorker _processWorker = ImageProcessWorker();
   ImageSettings? _beforeAuto;
   bool get canUndoAuto => _beforeAuto != null && !autoTuning && !transferring;
   List<DevicePort> ports = [];
@@ -47,6 +49,9 @@ class StudioController extends ChangeNotifier {
       _running = false,
       _cancel = false;
   int _revision = 0, _renderedRevision = -1;
+  int _preparationRevision = 0;
+  int? _workerPreparationRevision;
+  Uint8List? _workerSource;
   Timer? _debounce;
   SharedPreferences? _prefs;
   TransferProgress? progress;
@@ -91,12 +96,16 @@ class StudioController extends ChangeNotifier {
   }
 
   void updateSettings(ImageSettings value) {
+    if (value.rotation != settings.rotation || value.cover != settings.cover) {
+      _preparationRevision++;
+    }
     settings = value;
     unawaited(_saveSettings());
     scheduleProcess();
   }
 
   void resetSettings() {
+    if (settings.rotation != 0 || settings.cover) _preparationRevision++;
     settings = const ImageSettings();
     notice = '全部图像参数已重置，已保留图片和裁切结果';
     unawaited(_saveSettings());
@@ -155,7 +164,14 @@ class StudioController extends ChangeNotifier {
     while (!_disposed) {
       final revision = _revision;
       try {
-        final request = ProcessRequest(source, settings, crop: crop);
+        final prepare =
+            _workerPreparationRevision != _preparationRevision ||
+            !identical(_workerSource, source);
+        final request = ProcessRequest(
+          prepare ? source : null,
+          settings,
+          crop: prepare ? crop : null,
+        );
         if (_autoRequested) {
           _autoRequested = false;
           final job = AutoTuneJob(
@@ -184,7 +200,15 @@ class StudioController extends ChangeNotifier {
             unawaited(_saveSettings());
           }
         } else {
-          final result = await compute(processImage, request);
+          final result = await _processWorker.process(
+            request,
+            preparationRevision: _preparationRevision,
+            prepare: prepare,
+          );
+          if (prepare) {
+            _workerPreparationRevision = _preparationRevision;
+            _workerSource = source;
+          }
           if (_disposed) break;
           if (revision == _revision) {
             image = result;
@@ -281,6 +305,9 @@ class StudioController extends ChangeNotifier {
       }
       if (_disposed) return;
       source = bytes;
+      _preparationRevision++;
+      _workerPreparationRevision = null;
+      _workerSource = null;
       crop = null;
       imageName = name;
       previewRotation = 0;
@@ -293,6 +320,9 @@ class StudioController extends ChangeNotifier {
 
   void useDemo() {
     source = null;
+    _preparationRevision++;
+    _workerPreparationRevision = null;
+    _workerSource = null;
     crop = null;
     imageName = '日落山野 · 内置示例';
     scheduleProcess(immediate: true);
@@ -302,6 +332,9 @@ class StudioController extends ChangeNotifier {
       source ?? await compute(sampleSource, null);
   void applyCrop(CropSpec value) {
     crop = value;
+    _preparationRevision++;
+    _workerPreparationRevision = null;
+    _workerSource = null;
     settings = settings.copyWith(rotation: 0);
     scheduleProcess(immediate: true);
   }
@@ -488,6 +521,7 @@ class StudioController extends ChangeNotifier {
     cancelConnect();
     _debounce?.cancel();
     unawaited(_keepAwake(false));
+    unawaited(_processWorker.close());
     unawaited(client?.close() ?? Future.value());
     super.dispose();
   }
