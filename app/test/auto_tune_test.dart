@@ -63,7 +63,13 @@ void main() {
         'mode': 'floyd',
         'strength': 0,
       });
-      expect(explicitOldSetting.strength, 0);
+      expect(explicitOldSetting.strength, 1);
+      final explicitCurrentSetting = ImageSettings.fromJson({
+        'defaultsVersion': 4,
+        'mode': 'floyd',
+        'strength': 0,
+      });
+      expect(explicitCurrentSetting.strength, 0);
       final upgraded = ImageSettings.fromJson({
         'defaultsVersion': 1,
         'brightness': 0,

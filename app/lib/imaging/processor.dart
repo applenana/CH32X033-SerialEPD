@@ -88,7 +88,7 @@ class ImageSettings {
     gamutCompression: gamutCompression ?? this.gamutCompression,
   );
   Map<String, dynamic> toJson() => {
-    'defaultsVersion': 3,
+    'defaultsVersion': 4,
     'mode': mode.name,
     'brightness': brightness,
     'contrast': contrast,
@@ -120,16 +120,21 @@ class ImageSettings {
       'bayer4' || 'bayer8' => 'blueNoise',
       final name => name,
     };
-    // Version 2 already represented a complete, user-editable settings
-    // record. Keep its explicit strength value (including zero); version 3
-    // only changes the fresh/reset default to full diffusion strength.
-    final currentDefaults =
-        json['defaultsVersion'] == 2 || json['defaultsVersion'] == 3;
+    final storedVersion = json['defaultsVersion'] is num
+        ? (json['defaultsVersion'] as num).toInt()
+        : 0;
+    final currentDefaults = storedVersion >= 2;
     final previousDefaults = !currentDefaults;
     final brightness = value('brightness', .1, -.3, .3);
     final contrast = value('contrast', 1.1, .5, 1.8);
     final saturation = value('saturation', 1.1, 0, 2);
-    final strength = value('strength', 1, 0, 1);
+    final storedStrength = value('strength', 1, 0, 1);
+    // Versions 1–3 shipped with strength=0 as their default. That value is
+    // indistinguishable from an old untouched preference, so migrate it to
+    // the new full-strength default. Version 4 preserves explicit edits.
+    final strength = storedVersion < 4 && storedStrength == 0
+        ? 1.0
+        : storedStrength;
     return ImageSettings(
       mode:
           DitherMode.values.where((m) => m.name == modeName).firstOrNull ??
