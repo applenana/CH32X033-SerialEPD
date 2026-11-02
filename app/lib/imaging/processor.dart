@@ -239,14 +239,13 @@ const _divisors = <DitherMode, int>{
   DitherMode.burkes: 32,
 };
 
-double _linear(double c) =>
-    c <= .04045 ? c / 12.92 : math.pow((c + .055) / 1.055, 2.4).toDouble();
+double _linear(double c) => linearLight(c);
 double _encodeLinear(double c) =>
     c <= .0031308 ? 12.92 * c : 1.055 * math.pow(c, 1 / 2.4).toDouble() - .055;
 double _adjustChannel(double source, double luminance, ImageSettings s) {
   var v = luminance + (source - luminance) * s.saturation;
   v = ((v - .5) * s.contrast + .5 + s.brightness).clamp(0, 1);
-  v = math.pow(v, 1 / s.gamma).toDouble();
+  if (s.gamma != 1) v = math.pow(v, 1 / s.gamma).toDouble();
   return linearLight(v);
 }
 
@@ -254,15 +253,9 @@ List<double> _oklab(double r, double g, double b) {
   r = _linear(r);
   g = _linear(g);
   b = _linear(b);
-  final l = math
-      .pow(.4122214708 * r + .5363325363 * g + .0514459929 * b, 1 / 3)
-      .toDouble();
-  final m = math
-      .pow(.2119034982 * r + .6806995451 * g + .1073969566 * b, 1 / 3)
-      .toDouble();
-  final s = math
-      .pow(.0883024619 * r + .2817188376 * g + .6299787005 * b, 1 / 3)
-      .toDouble();
+  final l = cubeRoot(.4122214708 * r + .5363325363 * g + .0514459929 * b);
+  final m = cubeRoot(.2119034982 * r + .6806995451 * g + .1073969566 * b);
+  final s = cubeRoot(.0883024619 * r + .2817188376 * g + .6299787005 * b);
   return [
     .2104542553 * l + .793617785 * m - .0040720468 * s,
     1.9779984951 * l - 2.428592205 * m + .4505937099 * s,
@@ -524,9 +517,8 @@ ProcessedImage processPrepared(
         (color[2] * 255).round(),
       );
       if (kernel != null && s.strength > 0) {
-        final error = [r - color[0], g - color[1], b - color[2]];
-        final luminanceError =
-            .2126 * error[0] + .7152 * error[1] + .0722 * error[2];
+        final er = r - color[0], eg = g - color[1], eb = b - color[2];
+        final luminanceError = .2126 * er + .7152 * eg + .0722 * eb;
         for (final weight in kernel) {
           final nx = x + (reverse ? -weight[0] : weight[0]), ny = y + weight[1];
           if (nx < 0 || nx >= w || ny >= h) continue;
@@ -535,12 +527,18 @@ ProcessedImage processPrepared(
           // Preserve encoded-RGB error luminance while reducing color leakage
           // into neutral/cool neighbors. The original kernels are unchanged.
           final retain = 1 - (natural?.protection[ny * w + nx] ?? 0);
-          for (var c = 0; c < 3; c++) {
-            final transferred = natural == null
-                ? error[c]
-                : luminanceError + (error[c] - luminanceError) * retain;
-            rgb[target + c] += transferred * amount;
-          }
+          final tr = natural == null
+              ? er
+              : luminanceError + (er - luminanceError) * retain;
+          final tg = natural == null
+              ? eg
+              : luminanceError + (eg - luminanceError) * retain;
+          final tb = natural == null
+              ? eb
+              : luminanceError + (eb - luminanceError) * retain;
+          rgb[target] += tr * amount;
+          rgb[target + 1] += tg * amount;
+          rgb[target + 2] += tb * amount;
         }
       }
     }

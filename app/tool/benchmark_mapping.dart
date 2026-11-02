@@ -9,7 +9,7 @@ import 'package:ink_studio/imaging/reconstruction.dart';
 void main(List<String> args) {
   final source = args.isEmpty ? null : File(args.first).readAsBytesSync();
   final prepared = prepareImage(ProcessRequest(source, const ImageSettings()));
-  for (final mode in [DitherMode.blueNoise, DitherMode.perceptual]) {
+  for (final mode in DitherMode.values) {
     final settings = ImageSettings(mode: mode);
     final times = <int>[];
     ProcessedImage? result;

@@ -11,8 +11,29 @@ const _inks = [
   [1.0, 1.0, 0.0],
   [1.0, 0.0, 0.0],
 ];
-double linearLight(double c) =>
-    c <= .04045 ? c / 12.92 : math.pow((c + .055) / 1.055, 2.4).toDouble();
+const _linearLutSize = 16384;
+final _linearLut = List<double>.generate(_linearLutSize + 1, (i) {
+  final c = i / _linearLutSize;
+  return c <= .04045 ? c / 12.92 : math.pow((c + .055) / 1.055, 2.4).toDouble();
+}, growable: false);
+
+double linearLight(double c) {
+  if (c <= .04045) return c / 12.92;
+  if (c >= 1) return 1;
+  return _linearLut[(c * _linearLutSize).round()];
+}
+
+final _cubeRootLut = List<double>.generate(
+  _linearLutSize + 1,
+  (i) => math.pow(i / _linearLutSize, 1 / 3).toDouble(),
+  growable: false,
+);
+
+double cubeRoot(double c) {
+  if (c <= 0) return 0;
+  if (c >= 1) return 1;
+  return _cubeRootLut[(c * _linearLutSize).round()];
+}
 
 /// Weighted isotonic projection into 0 <= B <= G <= R <= 1.
 /// Unlike clipping RGB channels, pooling conserves source linear luminance.
@@ -92,19 +113,24 @@ Float64List _correlate(Float64List input, int w, int h, _Kernel k) {
   final tmp = Float64List(input.length),
       out = Float64List(input.length),
       r = k.radius;
+  final xStart = List<int>.generate(w, (x) => math.max(-r, -x));
+  final xEnd = List<int>.generate(w, (x) => math.min(r, w - 1 - x));
+  final yStart = List<int>.generate(h, (y) => math.max(-r, -y));
+  final yEnd = List<int>.generate(h, (y) => math.min(r, h - 1 - y));
   for (var y = 0; y < h; y++) {
+    final row = y * w;
     for (var x = 0; x < w; x++) {
       var sum = 0.0;
-      for (var d = math.max(-r, -x); d <= math.min(r, w - 1 - x); d++) {
-        sum += input[y * w + x + d] * k.line[d + r];
+      for (var d = xStart[x]; d <= xEnd[x]; d++) {
+        sum += input[row + x + d] * k.line[d + r];
       }
-      tmp[y * w + x] = sum;
+      tmp[row + x] = sum;
     }
   }
   for (var y = 0; y < h; y++) {
     for (var x = 0; x < w; x++) {
       var sum = 0.0;
-      for (var d = math.max(-r, -y); d <= math.min(r, h - 1 - y); d++) {
+      for (var d = yStart[y]; d <= yEnd[y]; d++) {
         sum += tmp[(y + d) * w + x] * k.line[d + r];
       }
       out[y * w + x] = sum;
@@ -194,7 +220,13 @@ List<double> _coverageWithBasis(
   double b,
   _PaletteBasis basis,
 ) {
-  final weights = basis.solve(r, g, b).map((v) => math.max(0, v)).toList();
+  final solved = basis.solve(r, g, b);
+  final weights = [
+    math.max(0, solved[0]),
+    math.max(0, solved[1]),
+    math.max(0, solved[2]),
+    math.max(0, solved[3]),
+  ];
   final sum = weights[0] + weights[1] + weights[2] + weights[3];
   if (sum <= 1e-8) return [1, 0, 0, 0];
   return [
@@ -215,7 +247,7 @@ class PaletteProjector {
     : _basis = _makePaletteBasis(inks);
 
   List<double> map(double r, double g, double b) =>
-      _projectToPaletteWithBasis(r, g, b, inks, compression, _basis);
+      _projectToPaletteWithBasis(r, g, b, inks, compression, _basis, null);
 }
 
 double _luminance(List<double> c) => .2126 * c[0] + .7152 * c[1] + .0722 * c[2];
@@ -239,22 +271,29 @@ List<double> _projectToPaletteWithBasis(
   List<List<double>> inks,
   double compression,
   _PaletteBasis basis,
+  List<double>? preparedLevels,
 ) {
-  final original = [r, g, b];
   final raw = basis.solve(r, g, b);
-  if (raw.every((v) => v >= -1e-10)) return original;
-  final levels = inks.map(_luminance).toList();
+  if (raw[0] >= -1e-10 &&
+      raw[1] >= -1e-10 &&
+      raw[2] >= -1e-10 &&
+      raw[3] >= -1e-10) {
+    return [r, g, b];
+  }
+  final levels = preparedLevels ?? inks.map(_luminance).toList();
   var low = 0, high = 0;
   for (var i = 1; i < 4; i++) {
     if (levels[i] < levels[low]) low = i;
     if (levels[i] > levels[high]) high = i;
   }
-  final y = _luminance(original).clamp(levels[low], levels[high]);
+  final sourceY = .2126 * r + .7152 * g + .0722 * b;
+  final y = sourceY.clamp(levels[low], levels[high]);
   final weights = _coverageWithBasis(r, g, b, basis);
-  final currentY = List.generate(
-    4,
-    (i) => weights[i] * levels[i],
-  ).reduce((a, b) => a + b);
+  final currentY =
+      weights[0] * levels[0] +
+      weights[1] * levels[1] +
+      weights[2] * levels[2] +
+      weights[3] * levels[3];
   // Correct the clipped projection by a convex mixture, never RGB clipping.
   final end = currentY < y ? high : low;
   final delta = levels[end] - currentY;
@@ -266,7 +305,7 @@ List<double> _projectToPaletteWithBasis(
   }
   final span = levels[high] - levels[low];
   final white = span < 1e-12 ? 0.0 : (y - levels[low]) / span;
-  final anchor = List.filled(4, 0.0);
+  final anchor = [0.0, 0.0, 0.0, 0.0];
   anchor[low] = 1 - white;
   anchor[high] += white;
   // The line from the panel neutral axis to the source hits a face when a
@@ -277,15 +316,25 @@ List<double> _projectToPaletteWithBasis(
   }
   final amount = compression.clamp(0.0, 1.0);
   // For unreachable luminance use the attainable endpoint, not the raw ray.
-  if ((_luminance(original) - y).abs() < 1e-10) {
+  if ((sourceY - y).abs() < 1e-10) {
     for (var i = 0; i < 4; i++) {
       final ray = anchor[i] + extent * (raw[i] - anchor[i]);
       weights[i] = weights[i] * (1 - amount) + ray * amount;
     }
   }
   return [
-    for (var c = 0; c < 3; c++)
-      List.generate(4, (i) => weights[i] * inks[i][c]).reduce((a, b) => a + b),
+    weights[0] * inks[0][0] +
+        weights[1] * inks[1][0] +
+        weights[2] * inks[2][0] +
+        weights[3] * inks[3][0],
+    weights[0] * inks[0][1] +
+        weights[1] * inks[1][1] +
+        weights[2] * inks[2][1] +
+        weights[3] * inks[3][1],
+    weights[0] * inks[0][2] +
+        weights[1] * inks[1][2] +
+        weights[2] * inks[2][2] +
+        weights[3] * inks[3][2],
   ];
 }
 
@@ -315,6 +364,7 @@ Reconstruction reconstruct(
       .toList();
   final paletteBasis = _makePaletteBasis(inkLinear);
   final inkOpponent = inkLinear.map((v) => opponent(v[0], v[1], v[2])).toList();
+  final levels = inkLinear.map(_luminance).toList();
   for (var i = 0; i < n; i++) {
     final r = rgb[i * 3].clamp(0.0, 1.0),
         g = rgb[i * 3 + 1].clamp(0.0, 1.0),
@@ -346,6 +396,7 @@ Reconstruction reconstruct(
       inkLinear,
       gamutCompression,
       paletteBasis,
+      levels,
     );
     final weights = _coverageWithBasis(
       mapped[0],
