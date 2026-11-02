@@ -310,6 +310,45 @@ Uint8List packIndices(List<int> pixels) {
   return out;
 }
 
+/// Encodes the preview as a four-entry, 2-bit indexed PNG. The preview only
+/// contains the panel palette, so creating a 24-bit RGB image and asking the
+/// PNG encoder to rediscover that palette wastes both CPU and memory.
+Uint8List _encodePreview(
+  Uint8List indices,
+  int w,
+  int h,
+  List<List<double>> inks,
+) {
+  final palette = img.PaletteUint8(4, 3);
+  for (var i = 0; i < 4; i++) {
+    palette.setRgb(
+      i,
+      (inks[i][0] * 255).round(),
+      (inks[i][1] * 255).round(),
+      (inks[i][2] * 255).round(),
+    );
+  }
+  final output = img.Image(
+    width: w,
+    height: h,
+    format: img.Format.uint2,
+    palette: palette,
+  );
+  final data = output.data! as img.ImageDataUint2;
+  for (var y = 0; y < h; y++) {
+    final source = y * w;
+    final target = y * data.rowStride;
+    for (var x = 0; x < w; x += 4) {
+      var packed = indices[source + x] << 6;
+      if (x + 1 < w) packed |= indices[source + x + 1] << 4;
+      if (x + 2 < w) packed |= indices[source + x + 2] << 2;
+      if (x + 3 < w) packed |= indices[source + x + 3];
+      data.data[target + (x >> 2)] = packed;
+    }
+  }
+  return Uint8List.fromList(img.encodePng(output));
+}
+
 /// Prepared at final panel resolution, before color adjustment. Reused by AUTO.
 class PreparedImage {
   final Float32List rgb;
@@ -509,15 +548,10 @@ ProcessedImage processPrepared(
       ? adjusted.rgb
       : Float32List.fromList(adjusted.rgb);
   final inks = effectivePalette(s);
-  final colors = <double>[
-    for (final c in inks) ...c,
-  ];
-  final labColors = <double>[
-    for (final c in inks) ..._oklab(c[0], c[1], c[2]),
-  ];
+  final colors = <double>[for (final c in inks) ...c];
+  final labColors = <double>[for (final c in inks) ..._oklab(c[0], c[1], c[2])];
   final natural = adjusted.natural;
   final indices = Uint8List(w * h), counts = List.filled(4, 0);
-  final output = img.Image(width: w, height: h, numChannels: 3);
   if (s.mode == DitherMode.perceptual || s.mode == DitherMode.blueNoise) {
     final result = reconstruct(
       rgb,
@@ -535,18 +569,11 @@ ProcessedImage processPrepared(
       gamutCompression: s.gamutCompression,
     );
     for (var i = 0; i < w * h; i++) {
-      final index = result.indices[i], color = inks[index];
+      final index = result.indices[i];
       counts[index]++;
-      output.setPixelRgb(
-        i % w,
-        i ~/ w,
-        (color[0] * 255).round(),
-        (color[1] * 255).round(),
-        (color[2] * 255).round(),
-      );
     }
     return ProcessedImage(
-      Uint8List.fromList(img.encodePng(output)),
+      _encodePreview(result.indices, w, h, inks),
       prepared.original,
       packIndices(result.indices),
       result.indices,
@@ -580,13 +607,6 @@ ProcessedImage processPrepared(
       final color = inks[index];
       indices[pixel] = index;
       counts[index]++;
-      output.setPixelRgb(
-        x,
-        y,
-        (color[0] * 255).round(),
-        (color[1] * 255).round(),
-        (color[2] * 255).round(),
-      );
       if (kernel != null && s.strength > 0) {
         final er = r - color[0], eg = g - color[1], eb = b - color[2];
         final luminanceError = .2126 * er + .7152 * eg + .0722 * eb;
@@ -616,7 +636,7 @@ ProcessedImage processPrepared(
     }
   }
   return ProcessedImage(
-    Uint8List.fromList(img.encodePng(output)),
+    _encodePreview(indices, w, h, inks),
     prepared.original,
     packIndices(indices),
     indices,

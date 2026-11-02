@@ -22,6 +22,10 @@ class ImageProcessWorker {
     return _starting ??= _start();
   }
 
+  /// Starts the worker while the editor is loading preferences and scanning
+  /// ports, so the first image request does not pay isolate startup latency.
+  Future<void> warmUp() => _ensureStarted();
+
   Future<void> _start() async {
     final ready = Completer<SendPort>();
     _events.listen((message) {

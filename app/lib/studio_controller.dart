@@ -91,6 +91,7 @@ class StudioController extends ChangeNotifier {
     }
     if (_disposed) return;
     unawaited(_saveSettings()); // Persist the one-time defaults migration.
+    unawaited(_processWorker.warmUp());
     scheduleProcess(immediate: true);
     await scan();
   }
