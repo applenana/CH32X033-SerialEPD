@@ -200,10 +200,34 @@ class StudioController extends ChangeNotifier {
             unawaited(_saveSettings());
           }
         } else {
+          // Publish a useful full-resolution preview quickly, then finish the
+          // selected algorithm using the same prepared source. This keeps the
+          // first visible result fast for every algorithm without changing the
+          // final frame that can be sent to the panel.
+          if (prepare && settings.mode != DitherMode.blueNoise) {
+            final quick = await _processWorker.process(
+              ProcessRequest(
+                source,
+                settings.copyWith(mode: DitherMode.blueNoise),
+                crop: crop,
+              ),
+              preparationRevision: _preparationRevision,
+              prepare: true,
+            );
+            if (_disposed) break;
+            if (revision == _revision) {
+              image = quick;
+              _renderedRevision = -1;
+              changed();
+            }
+          }
           final result = await _processWorker.process(
             request,
             preparationRevision: _preparationRevision,
-            prepare: prepare,
+            // The quick pass above prepared the same source and dimensions.
+            // Reuse it; when the selected mode is blue-noise the first pass is
+            // already the final pass and this branch is skipped.
+            prepare: prepare && settings.mode == DitherMode.blueNoise,
           );
           if (prepare) {
             _workerPreparationRevision = _preparationRevision;

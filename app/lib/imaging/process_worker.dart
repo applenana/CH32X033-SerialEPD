@@ -71,6 +71,7 @@ class ImageProcessWorker {
     main.send(commands.sendPort);
     PreparedImage? prepared;
     int? preparedRevision;
+    int? preparedWidth, preparedHeight;
     commands.listen((message) {
       if (message is! List || message.length < 4) return;
       final id = message[0] as int;
@@ -78,9 +79,15 @@ class ImageProcessWorker {
       final prepare = message[2] as bool;
       final request = message[3] as ProcessRequest;
       try {
-        if (prepare || prepared == null || preparedRevision != revision) {
+        if (prepare ||
+            prepared == null ||
+            preparedRevision != revision ||
+            preparedWidth != request.width ||
+            preparedHeight != request.height) {
           prepared = prepareImage(request);
           preparedRevision = revision;
+          preparedWidth = request.width;
+          preparedHeight = request.height;
         }
         final image = processPrepared(
           prepared!,

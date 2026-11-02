@@ -30,8 +30,8 @@ img.Image decodeSource(Uint8List data, {int maxPixels = 6_000_000}) {
   if (data.length > 25 * 1024 * 1024) {
     throw const FormatException('图片文件超过 25 MB，请先缩小');
   }
-  final decoder = img.findDecoderForData(data),
-      info = decoder?.startDecode(data);
+  var decoder = img.findDecoderForData(data);
+  var info = decoder?.startDecode(data);
   if (info == null) {
     throw const FormatException('无法读取图片，请使用 PNG、JPEG、WebP 或 BMP');
   }
@@ -39,6 +39,23 @@ img.Image decodeSource(Uint8List data, {int maxPixels = 6_000_000}) {
       info.height <= 0 ||
       info.width * info.height > 24000000) {
     throw const FormatException('图片超过 2400 万像素或尺寸无效');
+  }
+  // JPEG can downsample in the entropy decoder itself. The panel has only
+  // 768x552 pixels, so decoding a multi-megapixel JPEG at full resolution
+  // before resizing wastes CPU and memory. Keep a generous source margin for
+  // crop/rotation while bounding the decoded image near two megapixels.
+  if (decoder is img.JpegDecoder) {
+    var scale = 1;
+    while (scale < 8 &&
+        ((info.width + scale - 1) ~/ scale) *
+                ((info.height + scale - 1) ~/ scale) >
+            2_000_000) {
+      scale *= 2;
+    }
+    if (scale > 1) {
+      decoder = img.JpegDecoder(scale: scale);
+      info = decoder.startDecode(data);
+    }
   }
   var decoded = decoder!.decodeFrame(0);
   if (decoded == null) throw const FormatException('图片解码失败');
