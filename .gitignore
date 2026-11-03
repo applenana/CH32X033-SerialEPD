@@ -4,3 +4,18 @@ __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
+
+# Local IDE / SDK configuration and signing material
+.vscode/
+.idea/
+local.properties
+key.properties
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+*.env
+.env.*
+!.env.example
