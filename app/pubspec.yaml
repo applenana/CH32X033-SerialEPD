@@ -22,5 +22,6 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/licenses/project.txt
     - assets/licenses/reconstruction.txt
     - assets/device_frame.png

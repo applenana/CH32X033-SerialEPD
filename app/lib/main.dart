@@ -12,6 +12,9 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   LicenseRegistry.addLicense(() async* {
     yield LicenseEntryWithLineBreaks([
+      'Ink Studio / CH32X033-SerialEPD',
+    ], await rootBundle.loadString('assets/licenses/project.txt'));
+    yield LicenseEntryWithLineBreaks([
       'OpenDisplay / OpenDithering DBS',
     ], await rootBundle.loadString('assets/licenses/reconstruction.txt'));
   });

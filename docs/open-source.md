@@ -1,52 +1,41 @@
 # 开源与发布说明
 
-本页说明仓库当前的发布边界。它不替代第三方组件的原始许可，也不表示项目已完成法律审查。
+## 许可
 
-## 许可状态
-
-**当前仓库没有根目录 `LICENSE` 文件，因此整体没有明确的开源许可证。** 在选择并提交许可证前，其他人不能仅凭公开可见就假定可以复制、修改、构建或再分发本项目。不要在 GitHub 仓库设置中宣称全仓库采用 MIT、Apache-2.0 或其他许可证。
-
-许可审查尤其要覆盖以下内容：
-
-- `Core/`、`Debug/`、`Peripheral/`、`Startup/` 中带 WCH 版权头的官方 SDK/启动代码，以及 `User/usb_desc.c`、`User/usb_desc.h` 中源自 WCH 示例的 USB 描述符代码。保留原始声明和适用的 WCH 芯片使用条件，不可用新的项目许可证覆盖它们。
-- `app/assets/licenses/reconstruction.txt` 中的重建算法许可，以及 Flutter 依赖的许可证。发布应用时用 Flutter 的第三方许可证页面/清单复核实际依赖。
-- `docs/references.md` 中引用或研究过的 MoInk 项目。该参考仓库当时未标注许可证；本仓库对屏幕寄存器行为的记录不授予 MoInk 代码的再分发权，也不应复制其代码或将其整体纳入本项目宽松许可证。
-- 自行编写固件、上位机和文档所采用的许可证应由维护者选择，并确认与上述文件的许可边界相容。必要时逐文件标注例外和来源。
-
-添加根目录许可证之前，应核对每个第三方来源和文件头；如无法确认某段代码的再分发权，应先隔离/替换该代码或取得许可。未完成这一步前，请将仓库状态标为“许可证待确定”。
+维护者于 2026-11-03 选择 MIT 并确认已完成许可审查。本项目自行编写的代码和文档采用根目录 [LICENSE](../LICENSE)，贡献规则见 [CONTRIBUTING.md](../CONTRIBUTING.md)。WCH SDK、示例与其他第三方组件保留原有条件，范围见 [NOTICE.md](../NOTICE.md)；根目录 MIT 不替换第三方版权或芯片使用限制。
 
 ## 自动构建与 GitHub Release
 
-`.github/workflows/ci-release.yml` 在 PR、推送到 `main`、手动触发和 `v*` 标签推送时运行：
+工作流在 PR、推送到 main、手动触发和 v* 标签推送时运行：
 
-- 使用 xPack RISC-V Embedded GCC 构建 CH32X033 固件 BIN/HEX/ELF 和校验信息，并运行原生固件、USB 控制器及 SEP/1 集成测试。
-- 使用 Flutter 3.41.9 执行 `flutter analyze` 和完整 `flutter test`。先构建固件模拟库，使应用的固件集成测试实际运行，而非跳过。
-- 分别构建 Windows x64 目录和 Android Release APK。
-- 仅当推送 `v*` 标签且上述检查和构建全部成功时，创建 GitHub Release，附上固件文件、Windows x64 ZIP 和 Android APK。
+- 从 WCH 官方 board manager 索引所列地址取得 GCC 8.2.0，并验证固定 SHA-256。该编译器支持源码的 WCH-Interrupt-fast 属性；普通上游 RISC-V GCC 不能直接替代。
+- 构建固件 BIN/HEX/ELF 并运行原生固件、USB 控制器及 SEP/1 集成测试。
+- 使用 Flutter 3.41.9 执行分析和完整测试；先构建并检查模拟库，确保固件 FFI 集成测试实际运行。
+- 构建 Windows x64 便携目录和 Android Release APK。
+- 仅在 v* 标签构建且所有检查通过后创建 Release 草稿，附上固件、Windows ZIP、APK、许可、构建信息和覆盖全部附件的 SHA-256 清单。维护者确认草稿附件后发布，避免用户看到未完成的产物集合。
 
-发布步骤：先解决许可证状态，更新 README/版本记录并验证改动；推送经过审阅的提交；在该提交上创建并推送版本标签，例如 `v0.4.1`。标签应与 Flutter `app/pubspec.yaml` 版本对应。GitHub Release 自动生成的说明需要人工核对，尤其是兼容性、变更和已知限制。
+发布时更新 app/pubspec.yaml、版本记录和 docs/release-publication.md，让标签对应应用版本；推送审阅后的提交及版本标签。检查 Actions 全部成功后公开 Release 草稿。不要移动已发布的版本标签。
 
-工作流中的 Android APK 使用当前 Gradle 配置的调试密钥签名，仅用于测试和直接安装，不是可长期维护的商店发行签名。它不应承诺可覆盖安装到不同密钥签署的旧版本。Windows 输出是未做代码签名的便携目录 ZIP。工作流不使用 Android 商店密钥或任何用户机密。正式商店发行前，需配置并保护发布密钥、签名配置、应用 ID、版本和密钥轮换/备份流程；不要把密钥提交到仓库。
+Windows 输出未代码签名；Android APK 是 Release 优化构建，但使用临时调试密钥，只供直接安装测试，不保证跨构建覆盖安装。正式商店发行需要维护者自己的稳定签名、版本及密钥备份流程。密钥不能提交到 Git。
 
-工作流目前只发布 README 声明支持的 Windows x64 和 Android 构建，不代表 Linux、macOS、iOS 或 Web 已验证。Actions 生成的软件/固件构建不等于 WCH-Link 烧录、USB 主机兼容性、实体屏幕刷新的电气及时序验收。
+目前仅支持 Windows x64 和 Android；Linux/macOS/iOS/Web 未作为发布平台。构建和模拟测试不替代真实 WCH-Link 烧录、USB 总线与屏幕电气/时序验收。
 
-## 隐私与仓库卫生
+## Git 历史凭据扫描
 
-已对当前跟踪文件进行关键字和文件类型抽查，未发现明显的 API 密钥、私钥、本机 `local.properties`、Gradle/Flutter 构建输出或已提交 APK/EXE。仓库中存在公开项目地址、硬件接线信息、工具链说明、测试向量和静态 UI/硬件图片；这些是项目内容，不是凭据。README、应用说明和本页已说明图像处理在本地进行，当前应用没有云上传路径。
+2026-11-03 在基线 eef131243dcd78e11f6484df070017c0624929f9 上执行 Gitleaks **8.30.1**，扫描器从官方 Release 下载并通过官方校验清单验证 SHA-256。
 
-这只是当前工作树的静态检查，不能证明 Git 全部历史、Git LFS 对象、图片元数据或将来提交绝无敏感信息。开源前还应：
+1. Gitleaks git 模式加 --all --reflog --full-history、100% 脱敏：39 个历史提交，约 1.56 MB 的补丁内容，退出码 0，未检出凭据。
+2. 通过 git cat-file --batch-all-objects 导出本地对象库所有 348 个唯一 blob（包含不可达对象，共 5,885,656 字节），再次用 Gitleaks 默认规则、递归解码及归档深度 2 扫描，退出码 0，未检出凭据。
+3. 补查文件名、本机用户目录、Git LFS 指针与作者邮箱：未发现敏感文件名或个人目录路径，无 LFS 指针；提交作者使用 GitHub noreply 地址。12 个二进制 blob 也纳入对象扫描，但扫描器不能识别图片里的文字。
 
-1. 在 GitHub 启用 secret scanning / push protection（若仓库计划和账号支持），并在推送前对完整 Git 历史运行凭据扫描。
-2. 检查截图、原理图、日志、示例输入和历史提交的 EXIF/元数据；确认其不包含个人姓名、邮箱、设备序列号、客户资料或未公开的设计内容。
-3. 检查 `git ls-files`，确保未跟踪 IDE 配置、本机 SDK 路径、签名密钥、固件烧录文件、构建产物或用户图片。
-4. 如发现凭据，先撤销/轮换，再从 Git 历史清除；仅删除当前文件不足以使历史中的凭据失效。
+脱敏机器报告保存在忽略目录 build/gitleaks-history.json、build/gitleaks-objects.json 和 build/privacy-scan-summary.json，不作为仓库发布内容。提交许可及发布配置后会对最终历史再扫描。未检出不等于绝无秘密，后续提交仍需审查；不对未知外部副本或图片视觉内容作保证。此前检查的当前 PNG 图片未见个人元数据。
 
-根 `.gitignore` 已排除 Flutter/Gradle 本机路径文件和常见 Android 密钥/环境文件名。忽略规则不是秘密管理机制，仍需检查提交内容和 CI 日志。
+复核时执行：gitleaks git --log-opts="--all --reflog --full-history" --redact=100 .
 
-## 当前还需处理的事项
+.gitignore 排除常见本机配置、构建输出和密钥；忽略规则不等于秘密管理。发现真正凭据时应先撤销/轮换，再决定如何清理历史，不能仅删除当前文件。建议在 GitHub 启用可用的 secret scanning / push protection。
 
-- **阻塞公开发布：** 选择项目自有代码与文档的许可，并完成 WCH SDK、USB 描述符、Flutter 依赖及算法来源的兼容性审查。不要由 CI 自动添加或猜测许可证。
-- 确认项目名称、维护者联系方式、支持渠道、商标/图标权利和硬件设计的公开范围。
-- 如要面向普通用户发布 Android 应用，决定应用 ID、正式签名和发布渠道；当前 APK 为调试签名。
-- 若需要发布 Linux/macOS 桌面包、Windows 安装器、SBOM、可复现构建或代码签名，需另行设计和验证；当前 Windows ZIP 是可携带运行目录，不是安装向导。
-- 发布前以真实 WCH 芯片和 A0/A1 屏幕完成硬件验收；构建及模拟通过不代表已完成实物验证。
+## 后续事项
+
+- 稳定 Android 发布签名、Windows 代码签名和安装器属于后续发行工作。
+- SBOM、额外平台、可复现构建和测量过的面板色彩校准尚未提供。
+- 真正的 A0/A1 面板、USB 主机兼容性和电气验收应单独记录。
