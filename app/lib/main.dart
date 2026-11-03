@@ -684,23 +684,45 @@ class _StudioPageState extends State<StudioPage> {
         ),
         const SizedBox(height: 16),
         Wrap(
+          key: const ValueKey('canvas-preview-controls'),
           alignment: WrapAlignment.spaceBetween,
           crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 12,
-          runSpacing: 12,
+          spacing: 8,
+          runSpacing: 8,
           children: [
             SegmentedButton<bool>(
+              key: const ValueKey('preview-mode-selector'),
               segments: const [
                 ButtonSegment(value: false, label: Text('四色预览')),
                 ButtonSegment(value: true, label: Text('原图')),
               ],
               selected: {c.showOriginal},
               showSelectedIcon: false,
-              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              style: _canvasControlStyle,
               onSelectionChanged: (v) {
                 c.showOriginal = v.first;
                 c.changed();
               },
+            ),
+            SegmentedButton<bool>(
+              key: const ValueKey('image-fit-selector'),
+              segments: const [
+                ButtonSegment(
+                  value: false,
+                  label: Text('完整'),
+                  tooltip: '画面适配：完整显示图片',
+                ),
+                ButtonSegment(
+                  value: true,
+                  label: Text('铺满'),
+                  tooltip: '画面适配：铺满画布，裁去超出部分',
+                ),
+              ],
+              selected: {c.settings.cover},
+              showSelectedIcon: false,
+              style: _canvasControlStyle,
+              onSelectionChanged: (v) =>
+                  c.updateSettings(c.settings.copyWith(cover: v.first)),
             ),
             const Text(
               '768 × 552  /  2 bit',
@@ -725,6 +747,12 @@ class _StudioPageState extends State<StudioPage> {
         ),
       ],
     ),
+  );
+  static const _canvasControlStyle = ButtonStyle(
+    visualDensity: VisualDensity.compact,
+    padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 8)),
+    minimumSize: WidgetStatePropertyAll(Size(48, 40)),
+    textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
   );
   Widget _settings({bool compact = false}) => _card(
     compact
@@ -856,23 +884,6 @@ class _StudioPageState extends State<StudioPage> {
           (v) => c.settings.copyWith(strength: v),
         ),
       const Divider(height: 24),
-      Row(
-        children: [
-          const Text('画面适配', style: TextStyle(fontSize: 12)),
-          const Spacer(),
-          SegmentedButton<bool>(
-            segments: const [
-              ButtonSegment(value: false, label: Text('完整')),
-              ButtonSegment(value: true, label: Text('铺满')),
-            ],
-            selected: {c.settings.cover},
-            showSelectedIcon: false,
-            style: const ButtonStyle(visualDensity: VisualDensity.compact),
-            onSelectionChanged: (v) =>
-                c.updateSettings(c.settings.copyWith(cover: v.first)),
-          ),
-        ],
-      ),
       ExpansionTile(
         tilePadding: EdgeInsets.zero,
         childrenPadding: EdgeInsets.zero,
