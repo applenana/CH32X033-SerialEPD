@@ -12,9 +12,18 @@ void main() {
   testWidgets('Responsive desktop and phone layouts, with real image preview', (
     tester,
   ) async {
-    final font = File('C:/Windows/Fonts/msyh.ttc');
+    final font = File(
+      Platform.isWindows
+          ? 'C:/Windows/Fonts/msyh.ttc'
+          : '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+    );
+    // Linux CI needs a real CJK font too: Ahem's artificial metrics overflow
+    // Chinese controls and do not represent the application on supported hosts.
+    if (Platform.environment['CI'] == 'true' && !font.existsSync()) {
+      fail('Install a CJK font before running the responsive layout test');
+    }
     if (font.existsSync()) {
-      for (final family in ['Microsoft YaHei', 'Roboto']) {
+      for (final family in ['Microsoft YaHei', 'Noto Sans CJK SC', 'Roboto']) {
         final loader = FontLoader(family)
           ..addFont(Future.value(ByteData.sublistView(font.readAsBytesSync())));
         await loader.load();
